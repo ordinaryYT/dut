@@ -5,7 +5,6 @@ const {
   ActionRowBuilder,
   ButtonBuilder,
   ButtonStyle,
-  SlashCommandBuilder,
   ChannelType
 } = require('discord.js');
 
@@ -124,7 +123,7 @@ client.on('messageCreate', async message => {
     await warn(message.member, 'Inappropriate content');
   }
 
-  // ================= TICKET AI RESPONSE =================
+  /* ================= TICKET AI RESPONSE ================= */
   const ticketState = client.ticketState || {};
   const state = ticketState[message.channel.id];
 
@@ -143,18 +142,16 @@ client.on('messageCreate', async message => {
     await message.channel.send({ content: aiMsg, components: [row] });
   }
 
-  // ================= STICKIED MESSAGES =================
-  // Channel 1
+  /* ================= STICKIED MESSAGES ================= */
   if ([process.env.STICKY_CHANNEL1_ID, process.env.STICKY_CHANNEL2_ID].includes(message.channel.id)) {
-    const stickMsg = "__**Stickied Message:**__\n\n# Info\nThis channel is only for sending your brainrots to flex it and see what people think.\n\n**Absolutely no discussions here, use appropriate channels for chatting, suggestions, and so forth.** ⚠️ You will receive <@&1466114901020519> for side chatting.__**Stickied Message:**__";
+    const stickMsg = `__**Stickied Message:**__\n\n# Info\n\n**Absolutely no discussions here, use appropriate channels for chatting, suggestions, and so forth.** \n⚠️ You will receive <@&1466114901020519> for side chatting.__**Stickied Message:**__`;
     const messages = await message.channel.messages.fetch({ limit: 10 });
     messages.filter(m => m.author.id === client.user.id && m.content.includes('Stickied Message')).forEach(m => m.delete());
     await message.channel.send(stickMsg);
   }
 
-  // Channel 2 (Fortnite code)
   if (message.channel.id === process.env.STICKY_CHANNEL3_ID) {
-    const stickMsg = "__**Stickied Message:**__\n\n# Info\n⚠️ Use code thebigdutz in the Fortnite item shop.";
+    const stickMsg = `__**Stickied Message:**__\n\n# Info\n\n⚠️  Use code thebigdutz in the Fortnite item shop.`;
     const messages = await message.channel.messages.fetch({ limit: 10 });
     messages.filter(m => m.author.id === client.user.id && m.content.includes('Stickied Message')).forEach(m => m.delete());
     await message.channel.send(stickMsg);
@@ -225,13 +222,11 @@ client.on('interactionCreate', async interaction => {
 
       const cmd = interaction.commandName;
 
-      // Rules
       if (cmd === 'rules') {
         await interaction.deferReply({ flags: 64 });
         await interaction.followUp({ content: `**Rules**\n\nBe respectful...\nFifth Warning\nPermanent Ban`, flags: 64 });
       }
 
-      // Invite reward
       if (cmd === 'invitereward') {
         const row = new ActionRowBuilder().addComponents(
           new ButtonBuilder().setLabel('Join Group').setStyle(ButtonStyle.Link).setURL('https://www.roblox.com/share/g/46230128')
@@ -240,7 +235,6 @@ client.on('interactionCreate', async interaction => {
         await interaction.followUp({ content: `Anyone who you invite gets 10 robux...`, components: [row], flags: 64 });
       }
 
-      // Ban
       if (cmd === 'ban') {
         const user = interaction.options.getUser('user');
         const member = await interaction.guild.members.fetch(user.id);
@@ -260,7 +254,6 @@ client.on('interactionCreate', async interaction => {
         await interaction.followUp({ content: `✅ ${member} has been given the perm-ban review role.`, flags: 64 });
       }
 
-      // Unban (remove role)
       if (cmd === 'unban') {
         const user = interaction.options.getUser('user');
         const member = await interaction.guild.members.fetch(user.id);
@@ -268,8 +261,6 @@ client.on('interactionCreate', async interaction => {
         await interaction.deferReply({ flags: 64 });
         await interaction.followUp({ content: `✅ ${member}'s perm-ban review role removed.`, flags: 64 });
       }
-
-      // Other commands follow same pattern (revoke, nuke, giveaway)
     }
   } catch (err) {
     console.error(err);
