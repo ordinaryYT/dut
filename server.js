@@ -97,14 +97,11 @@ async function warn(member, rule) {
 
   const count = r.rows[0].count;
 
-  // DM the member
   await member.send(`Rule broken: ${rule}`);
 
-  // Staff log
   const log = member.guild.channels.cache.get(process.env.STAFF_LOG_CHANNEL_ID);
   log?.send(`${member} | ${rule} | Warning ${count}`);
 
-  // Automatic punishments
   if (count === 2) await member.timeout(60 * 60 * 1000);
   if (count === 3) await member.timeout(24 * 60 * 60 * 1000);
   if (count === 4) await member.roles.add(process.env.WEEK_BAN_ROLE_ID); // 1 week review
@@ -118,93 +115,143 @@ async function warn(member, rule) {
 client.on('messageCreate', async message => {
   if (message.author.bot) return;
 
-  // Ping abuse: only if the forbidden user is mentioned
+  // Ping abuse only triggers if the forbidden user is mentioned
   if (message.mentions.users.has(process.env.PING_FORBIDDEN_USER_ID)) {
     await warn(message.member, 'Pinged forbidden user');
     const dmMsg = await ai(`You pinged a forbidden user in ${message.guild.name}. Please follow the rules.`);
     await message.member.send(dmMsg);
   }
 
-  // Optional: bad word detection
+  // Optional: simple bad word detection
   const badWords = ['nsfw', 'porn', 'raid', 'ddos', 'dox'];
   if (badWords.some(w => message.content.toLowerCase().includes(w))) {
     await warn(message.member, 'Inappropriate content');
   }
-});
 
-/* ================= TICKET SYSTEM ================= */
-client.once('ready', async () => {
-  const ticketChannel = client.channels.cache.get(process.env.TICKETS_CHANNEL_ID);
-  if (!ticketChannel) return;
+  // ================= TICKET AI RESPONSE =================
+  const ticketState = client.ticketState || {};
+  const state = ticketState[message.channel.id];
 
-  const row = new ActionRowBuilder().addComponents(
-    new ButtonBuilder()
-      .setCustomId('create_ticket')
-      .setLabel('Create Ticket')
-      .setStyle(ButtonStyle.Primary)
-  );
+  // Only respond if it's a ticket channel and user sent the message while waiting for AI
+  if (state && state.waitingForUser && state.userId === message.author.id) {
+    // Lock the channel for user
+    await message.channel.setParent(process.env.TICKET_LOCKED_CATEGORY_ID);
+    await message.channel.permissionOverwrites.edit(message.author.id, { SendMessages: false });
+    state.waitingForUser = false;
 
-  const messages = await ticketChannel.messages.fetch({ limit: 10 });
-  if (!messages.find(m => m.author.id === client.user.id)) {
-    ticketChannel.send({
-      content: 'Click the button below to create a support ticket:',
-      components: [row]
-    });
+    // AI responds
+    const aiMsg = await ai(`User says: ${message.content}`);
+    const row = new ActionRowBuilder().addComponents(
+      new ButtonBuilder().setCustomId('continue').setLabel('Continue').setStyle(ButtonStyle.Success),
+      new ButtonBuilder().setCustomId('ping').setLabel('Ping Staff').setStyle(ButtonStyle.Primary),
+      new ButtonBuilder().setCustomId('close').setLabel('Close Ticket').setStyle(ButtonStyle.Danger)
+    );
+
+    await message.channel.send({ content: aiMsg, components: [row] });
   }
 });
+
+/* ================= TICKET BUTTONS ================= */
+client.ticketState = {};
 
 client.on('interactionCreate', async interaction => {
-  if (interaction.isButton()) {
-    if (interaction.customId === 'create_ticket') {
-      const guild = interaction.guild;
+  if (!interaction.isButton()) return;
 
-      const ticketChannel = await guild.channels.create({
-        name: `ticket-${interaction.user.username}`,
-        type: ChannelType.GuildText,
-        parent: process.env.TICKET_LOCKED_CATEGORY_ID,
-        permissionOverwrites: [
-          { id: guild.id, deny: [PermissionsBitField.Flags.SendMessages] },
-          { id: interaction.user.id, deny: [PermissionsBitField.Flags.SendMessages] },
-          { id: client.user.id, allow: [PermissionsBitField.Flags.SendMessages] }
-        ]
-      });
+  // Create ticket
+  if (interaction.customId === 'create_ticket') {
+    const guild = interaction.guild;
+    const ticketChannel = await guild.channels.create({
+      name: `ticket-${interaction.user.username}`,
+      type: ChannelType.GuildText,
+      parent: process.env.TICKET_OPEN_CATEGORY_ID,
+      permissionOverwrites: [
+        { id: guild.id, deny: [PermissionsBitField.Flags.SendMessages] },
+        { id: interaction.user.id, allow: [PermissionsBitField.Flags.SendMessages] },
+        { id: client.user.id, allow: [PermissionsBitField.Flags.SendMessages] }
+      ]
+    });
 
-      const response = await ai(`New ticket opened by ${interaction.user.username}`);
+    // Greeting message from AI (no buttons)
+    const greetMsg = await ai(`Hello ${interaction.user.username}, welcome to your ticket! How can I help you today?`);
+    await ticketChannel.send(greetMsg);
 
-      const row = new ActionRowBuilder().addComponents(
-        new ButtonBuilder().setCustomId('continue').setLabel('Continue').setStyle(ButtonStyle.Success),
-        new ButtonBuilder().setCustomId('ping').setLabel('Ping Staff').setStyle(ButtonStyle.Primary),
-        new ButtonBuilder().setCustomId('close').setLabel('Close Ticket').setStyle(ButtonStyle.Danger)
-      );
+    // Set ticket state
+    client.ticketState[ticketChannel.id] = {
+      waitingForUser: true,
+      userId: interaction.user.id
+    };
 
-      await ticketChannel.send({ content: response, components: [row] });
-      await interaction.reply({ content: 'Ticket created!', ephemeral: true });
-    }
-
-    if (interaction.customId === 'continue') {
-      const channel = interaction.channel;
-      await channel.setParent(process.env.TICKET_OPEN_CATEGORY_ID);
-      await channel.permissionOverwrites.edit(interaction.user.id, { SendMessages: true });
-      await interaction.deferUpdate();
-    }
-
-    if (interaction.customId === 'ping') {
-      interaction.channel.send(`<@&${process.env.STAFF_ROLE_ID}>`);
-      await interaction.deferUpdate();
-    }
-
-    if (interaction.customId === 'close') {
-      await interaction.channel.delete();
-    }
+    await interaction.reply({ content: 'Ticket created!', ephemeral: true });
   }
 
-  if (interaction.isChatInputCommand()) {
-    if (!allowed(interaction.member)) return interaction.deferReply({ ephemeral: true });
+  // Continue button
+  if (interaction.customId === 'continue') {
+    const channel = interaction.channel;
+    const state = client.ticketState[channel.id];
+    if (!state) return;
+    await channel.setParent(process.env.TICKET_OPEN_CATEGORY_ID);
+    await channel.permissionOverwrites.edit(state.userId, { SendMessages: true });
+    state.waitingForUser = true;
+    await interaction.deferUpdate();
+  }
 
-    /* ================= RULES ================= */
-    if (interaction.commandName === 'rules') {
-      interaction.channel.send({
-        content: `**Rules**
+  // Ping staff
+  if (interaction.customId === 'ping') {
+    interaction.channel.send(`<@&${process.env.STAFF_ROLE_ID}>`);
+    await interaction.deferUpdate();
+  }
+
+  // Close ticket
+  if (interaction.customId === 'close') {
+    delete client.ticketState[interaction.channel.id];
+    await interaction.channel.delete();
+  }
+});
+
+/* ================= WELCOME ================= */
+client.on('guildMemberAdd', async member => {
+  const channel = member.guild.channels.cache.get(process.env.WELCOME_CHANNEL_ID);
+  if (!channel) return;
+  const msg = await ai(`Welcome ${member.user.username} to Dutz Dungeon community`);
+  channel.send(msg);
+});
+
+/* ================= SLASH COMMANDS ================= */
+const commands = [
+  new SlashCommandBuilder().setName('rules').setDescription('Send the server rules'),
+  new SlashCommandBuilder().setName('invitereward').setDescription('Send invite reward info'),
+  new SlashCommandBuilder().setName('ban')
+    .setDescription('Give perm-ban review role')
+    .addUserOption(o => o.setName('user').setDescription('User to ban').setRequired(true)),
+  new SlashCommandBuilder().setName('unban')
+    .setDescription('Remove perm-ban review role')
+    .addUserOption(o => o.setName('user').setDescription('User to unban').setRequired(true)),
+  new SlashCommandBuilder().setName('revoke')
+    .setDescription('Revoke warnings from user')
+    .addUserOption(o => o.setName('user').setDescription('User').setRequired(true))
+    .addIntegerOption(o => o.setName('amount').setDescription('Number of warnings to remove').setRequired(true)),
+  new SlashCommandBuilder().setName('nuke').setDescription('Nuke channel'),
+  new SlashCommandBuilder().setName('giveaway')
+    .setDescription('Start a giveaway')
+    .addStringOption(o => o.setName('prize').setDescription('Prize name').setRequired(true))
+    .addIntegerOption(o => o.setName('minutes').setDescription('Duration in minutes').setRequired(true))
+].map(c => c.toJSON());
+
+client.once('ready', async () => {
+  const rest = new REST({ version: '10' }).setToken(process.env.DISCORD_TOKEN);
+  await rest.put(Routes.applicationCommands(process.env.CLIENT_ID), { body: commands });
+  console.log(`Logged in as ${client.user.tag}`);
+});
+
+/* ================= COMMAND HANDLER ================= */
+client.on('interactionCreate', async interaction => {
+  if (!interaction.isChatInputCommand()) return;
+  if (!allowed(interaction.member)) return interaction.deferReply({ ephemeral: true });
+
+  /* RULES */
+  if (interaction.commandName === 'rules') {
+    interaction.channel.send({
+      content: `**Rules**
 
 Be respectful
 You must respect all users, regardless of your liking towards them. Treat others the way you want to be treated.
@@ -249,90 +296,86 @@ Fourth Warning
 
 Fifth Warning
 Permanent Ban`
-      });
-    }
+    });
+  }
 
-    /* ================= INVITE REWARD ================= */
-    if (interaction.commandName === 'invitereward') {
-      const row = new ActionRowBuilder().addComponents(
-        new ButtonBuilder()
-          .setLabel('Join Group')
-          .setStyle(ButtonStyle.Link)
-          .setURL('https://www.roblox.com/share/g/46230128')
-      );
+  /* INVITE REWARD */
+  if (interaction.commandName === 'invitereward') {
+    const row = new ActionRowBuilder().addComponents(
+      new ButtonBuilder()
+        .setLabel('Join Group')
+        .setStyle(ButtonStyle.Link)
+        .setURL('https://www.roblox.com/share/g/46230128')
+    );
 
-      interaction.channel.send({
-        content: `Anyone who you invite gets 10 robux for joining this discord. For me to send you robux, you must be in this group for 2 weeks.  
+    interaction.channel.send({
+      content: `Anyone who you invite gets 10 robux for joining this discord. For me to send you robux, you must be in this group for 2 weeks.  
 It's up to you if you want to split it between the both of you, for example 5 to you and 5 to your friend, as long as I get proof of you both saying it's ok 🙂.  
 I will keep logs of people who have claimed, and invites will get reset after claim so you can't claim twice.`,
-        components: [row]
-      });
-    }
+      components: [row]
+    });
+  }
 
-    /* ================= MANUAL BAN ================= */
-    if (interaction.commandName === 'ban') {
-      const user = interaction.options.getUser('user');
-      const member = await interaction.guild.members.fetch(user.id);
+  /* MANUAL BAN */
+  if (interaction.commandName === 'ban') {
+    const user = interaction.options.getUser('user');
+    const member = await interaction.guild.members.fetch(user.id);
 
-      // Just give perm ban review role and set warning to 5
-      await pool.query(
-        `INSERT INTO warnings(user_id, count)
-         VALUES($1, 5)
-         ON CONFLICT (user_id) DO UPDATE SET count = 5`,
-        [member.id]
-      );
+    await pool.query(
+      `INSERT INTO warnings(user_id, count)
+       VALUES($1, 5)
+       ON CONFLICT (user_id) DO UPDATE SET count = 5`,
+      [member.id]
+    );
 
-      await member.roles.add(process.env.WEEK_BAN_ROLE_ID);
+    await member.roles.add(process.env.WEEK_BAN_ROLE_ID);
 
-      const log = interaction.guild.channels.cache.get(process.env.STAFF_LOG_CHANNEL_ID);
-      log?.send(`${member} has reached 5th warning — review for permanent ban`);
+    const log = interaction.guild.channels.cache.get(process.env.STAFF_LOG_CHANNEL_ID);
+    log?.send(`${member} has reached 5th warning — review for permanent ban`);
 
-      await interaction.reply({ content: `✅ ${member} has been given the perm-ban review role.`, ephemeral: true });
-    }
+    await interaction.reply({ content: `✅ ${member} has been given the perm-ban review role.`, ephemeral: true });
+  }
 
-    /* ================= OTHER COMMANDS ================= */
-    if (interaction.commandName === 'unban') {
-      await interaction.guild.members.unban(interaction.options.getUser('user').id);
-    }
+  /* UNBAN (remove perm-ban role) */
+  if (interaction.commandName === 'unban') {
+    const user = interaction.options.getUser('user');
+    const member = await interaction.guild.members.fetch(user.id);
+    await member.roles.remove(process.env.WEEK_BAN_ROLE_ID);
+    await interaction.reply({ content: `✅ ${member}'s perm-ban review role removed.`, ephemeral: true });
+  }
 
-    if (interaction.commandName === 'revoke') {
-      await pool.query(
-        `UPDATE warnings SET count = GREATEST(count - $1, 0) WHERE user_id=$2`,
-        [interaction.options.getInteger('amount'), interaction.options.getUser('user').id]
-      );
-    }
+  /* REVOKE WARNINGS */
+  if (interaction.commandName === 'revoke') {
+    await pool.query(
+      `UPDATE warnings SET count = GREATEST(count - $1, 0) WHERE user_id=$2`,
+      [interaction.options.getInteger('amount'), interaction.options.getUser('user').id]
+    );
+  }
 
-    if (interaction.commandName === 'nuke') {
-      const c = interaction.channel;
-      const clone = await c.clone();
-      await c.delete();
-      clone.setPosition(c.position);
-    }
+  /* NUKE */
+  if (interaction.commandName === 'nuke') {
+    const c = interaction.channel;
+    const clone = await c.clone();
+    await c.delete();
+    clone.setPosition(c.position);
+  }
 
-    if (interaction.commandName === 'giveaway') {
-      const prize = interaction.options.getString('prize');
-      const minutes = interaction.options.getInteger('minutes');
-      const msg = await interaction.channel.send(`🎉 Giveaway: **${prize}**
+  /* GIVEAWAY */
+  if (interaction.commandName === 'giveaway') {
+    const prize = interaction.options.getString('prize');
+    const minutes = interaction.options.getInteger('minutes');
+    const msg = await interaction.channel.send(`🎉 Giveaway: **${prize}**
 React with 🎉 to enter!
 Ends in ${minutes} minutes`);
-      await msg.react('🎉');
+    await msg.react('🎉');
 
-      await pool.query(
-        `INSERT INTO giveaways VALUES($1,$2,$3,$4)`,
-        [msg.id, msg.channel.id, Date.now() + minutes * 60000, prize]
-      );
-    }
-
-    await interaction.deferReply({ ephemeral: true });
+    await pool.query(
+      `INSERT INTO giveaways VALUES($1,$2,$3,$4)`,
+      [msg.id, msg.channel.id, Date.now() + minutes * 60000, prize]
+    );
   }
-});
 
-/* ================= WELCOME ================= */
-client.on('guildMemberAdd', async member => {
-  const channel = member.guild.channels.cache.get(process.env.WELCOME_CHANNEL_ID);
-  if (!channel) return;
-  const msg = await ai(`Welcome ${member.user.username} to Dutz Dungeon community`);
-  channel.send(msg);
+  await interaction.deferReply({ ephemeral: true });
 });
 
 /* ================= GIVEAWAY CHECK ================= */
