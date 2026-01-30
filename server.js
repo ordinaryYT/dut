@@ -106,7 +106,10 @@ async function warn(member, rule) {
   if (count === 2) await member.timeout(60 * 60 * 1000);
   if (count === 3) await member.timeout(24 * 60 * 60 * 1000);
   if (count === 4) await member.roles.add(process.env.WEEK_BAN_ROLE_ID);
-  if (count >= 5) log?.send(`${member} requires perm ban review`);
+  if (count >= 5) {
+    await member.roles.add(process.env.WEEK_BAN_ROLE_ID); // perm ban review role
+    log?.send(`${member} requires permanent ban review`);
+  }
 }
 
 /* ================= AUTOMOD ================= */
@@ -126,74 +129,82 @@ client.on('messageCreate', message => {
   }
 });
 
-/* ================= TICKETS ================= */
-client.on('messageCreate', async message => {
-  if (message.channel.id !== process.env.TICKETS_CHANNEL_ID) return;
-  if (message.author.bot) return;
-
-  const guild = message.guild;
-
-  const ticketChannel = await guild.channels.create({
-    name: `ticket-${message.author.username}`,
-    type: ChannelType.GuildText,
-    parent: process.env.TICKET_LOCKED_CATEGORY_ID,
-    permissionOverwrites: [
-      {
-        id: guild.id,
-        deny: [PermissionsBitField.Flags.SendMessages]
-      },
-      {
-        id: message.author.id,
-        deny: [PermissionsBitField.Flags.SendMessages]
-      },
-      {
-        id: client.user.id,
-        allow: [PermissionsBitField.Flags.SendMessages]
-      }
-    ]
-  });
-
-  const response = await ai(message.content);
+/* ================= TICKET BUTTON MESSAGE ================= */
+client.once('ready', async () => {
+  const ticketChannel = client.channels.cache.get(process.env.TICKETS_CHANNEL_ID);
+  if (!ticketChannel) return;
 
   const row = new ActionRowBuilder().addComponents(
     new ButtonBuilder()
-      .setCustomId('continue')
-      .setLabel('Continue')
-      .setStyle(ButtonStyle.Success),
-    new ButtonBuilder()
-      .setCustomId('ping')
-      .setLabel('Ping Staff')
-      .setStyle(ButtonStyle.Primary),
-    new ButtonBuilder()
-      .setCustomId('close')
-      .setLabel('Close Ticket')
-      .setStyle(ButtonStyle.Danger)
+      .setCustomId('create_ticket')
+      .setLabel('Create Ticket')
+      .setStyle(ButtonStyle.Primary)
   );
 
-  await ticketChannel.send({ content: response, components: [row] });
+  // Only send if no previous message exists
+  const messages = await ticketChannel.messages.fetch({ limit: 10 });
+  if (!messages.find(m => m.author.id === client.user.id)) {
+    ticketChannel.send({
+      content: 'Click the button below to create a support ticket:',
+      components: [row]
+    });
+  }
 });
 
-/* ================= TICKET BUTTONS ================= */
+/* ================= TICKET CREATION ================= */
 client.on('interactionCreate', async interaction => {
   if (!interaction.isButton()) return;
 
-  const channel = interaction.channel;
+  if (interaction.customId === 'create_ticket') {
+    const guild = interaction.guild;
 
-  if (interaction.customId === 'continue') {
-    await channel.setParent(process.env.TICKET_OPEN_CATEGORY_ID);
-    await channel.permissionOverwrites.edit(interaction.user.id, {
-      SendMessages: true
+    const ticketChannel = await guild.channels.create({
+      name: `ticket-${interaction.user.username}`,
+      type: ChannelType.GuildText,
+      parent: process.env.TICKET_LOCKED_CATEGORY_ID,
+      permissionOverwrites: [
+        { id: guild.id, deny: [PermissionsBitField.Flags.SendMessages] },
+        { id: interaction.user.id, deny: [PermissionsBitField.Flags.SendMessages] },
+        { id: client.user.id, allow: [PermissionsBitField.Flags.SendMessages] }
+      ]
     });
+
+    const response = await ai('New ticket opened by ' + interaction.user.username);
+
+    const row = new ActionRowBuilder().addComponents(
+      new ButtonBuilder()
+        .setCustomId('continue')
+        .setLabel('Continue')
+        .setStyle(ButtonStyle.Success),
+      new ButtonBuilder()
+        .setCustomId('ping')
+        .setLabel('Ping Staff')
+        .setStyle(ButtonStyle.Primary),
+      new ButtonBuilder()
+        .setCustomId('close')
+        .setLabel('Close Ticket')
+        .setStyle(ButtonStyle.Danger)
+    );
+
+    await ticketChannel.send({ content: response, components: [row] });
+    await interaction.reply({ content: 'Ticket created!', ephemeral: true });
+  }
+
+  /* ================= TICKET BUTTONS ================= */
+  if (interaction.customId === 'continue') {
+    const channel = interaction.channel;
+    await channel.setParent(process.env.TICKET_OPEN_CATEGORY_ID);
+    await channel.permissionOverwrites.edit(interaction.user.id, { SendMessages: true });
     await interaction.deferUpdate();
   }
 
   if (interaction.customId === 'ping') {
-    channel.send(`<@&${process.env.STAFF_ROLE_ID}>`);
+    interaction.channel.send(`<@&${process.env.STAFF_ROLE_ID}>`);
     await interaction.deferUpdate();
   }
 
   if (interaction.customId === 'close') {
-    await channel.delete();
+    await interaction.channel.delete();
   }
 });
 
@@ -202,138 +213,131 @@ client.on('guildMemberAdd', async member => {
   const channel = member.guild.channels.cache.get(process.env.WELCOME_CHANNEL_ID);
   if (!channel) return;
 
-  const msg = await ai(
-    `Welcome ${member.user.username} to Dutz Dungeon community`
-  );
+  const msg = await ai(`Welcome ${member.user.username} to Dutz Dungeon community`);
   channel.send(msg);
 });
 
-/* ================= SLASH COMMANDS (FIXED) ================= */
+/* ================= SLASH COMMANDS ================= */
 const commands = [
-  new SlashCommandBuilder()
-    .setName('rules')
-    .setDescription('Send the server rules'),
-
-  new SlashCommandBuilder()
-    .setName('invitereward')
-    .setDescription('Send invite reward information'),
-
-  new SlashCommandBuilder()
-    .setName('ban')
-    .setDescription('Issue final warning (manual perm ban review)')
-    .addUserOption(o =>
-      o
-        .setName('user')
-        .setDescription('User to ban')
-        .setRequired(true)
-    ),
-
-  new SlashCommandBuilder()
-    .setName('unban')
-    .setDescription('Unban a user')
-    .addUserOption(o =>
-      o
-        .setName('user')
-        .setDescription('User to unban')
-        .setRequired(true)
-    ),
-
-  new SlashCommandBuilder()
-    .setName('revoke')
-    .setDescription('Revoke warnings from a user')
-    .addUserOption(o =>
-      o
-        .setName('user')
-        .setDescription('User to revoke warnings from')
-        .setRequired(true)
-    )
-    .addIntegerOption(o =>
-      o
-        .setName('amount')
-        .setDescription('Number of warnings to remove')
-        .setRequired(true)
-    ),
-
-  new SlashCommandBuilder()
-    .setName('nuke')
-    .setDescription('Delete and recreate the current channel'),
-
-  new SlashCommandBuilder()
-    .setName('giveaway')
+  new SlashCommandBuilder().setName('rules').setDescription('Send the server rules'),
+  new SlashCommandBuilder().setName('invitereward').setDescription('Send invite reward info'),
+  new SlashCommandBuilder().setName('ban')
+    .setDescription('Issue manual ban')
+    .addUserOption(o => o.setName('user').setDescription('User to ban').setRequired(true)),
+  new SlashCommandBuilder().setName('unban')
+    .setDescription('Unban user')
+    .addUserOption(o => o.setName('user').setDescription('User to unban').setRequired(true)),
+  new SlashCommandBuilder().setName('revoke')
+    .setDescription('Revoke warnings from user')
+    .addUserOption(o => o.setName('user').setDescription('User').setRequired(true))
+    .addIntegerOption(o => o.setName('amount').setDescription('Number of warnings to remove').setRequired(true)),
+  new SlashCommandBuilder().setName('nuke').setDescription('Nuke channel'),
+  new SlashCommandBuilder().setName('giveaway')
     .setDescription('Start a giveaway')
-    .addStringOption(o =>
-      o
-        .setName('prize')
-        .setDescription('Prize name')
-        .setRequired(true)
-    )
-    .addIntegerOption(o =>
-      o
-        .setName('minutes')
-        .setDescription('Duration in minutes')
-        .setRequired(true)
-    )
-].map(cmd => cmd.toJSON());
+    .addStringOption(o => o.setName('prize').setDescription('Prize name').setRequired(true))
+    .addIntegerOption(o => o.setName('minutes').setDescription('Duration in minutes').setRequired(true))
+].map(c => c.toJSON());
 
 client.once('ready', async () => {
   const rest = new REST({ version: '10' }).setToken(process.env.DISCORD_TOKEN);
-  await rest.put(
-    Routes.applicationCommands(process.env.CLIENT_ID),
-    { body: commands }
-  );
+  await rest.put(Routes.applicationCommands(process.env.CLIENT_ID), { body: commands });
   console.log(`Logged in as ${client.user.tag}`);
 });
 
 /* ================= COMMAND HANDLER ================= */
 client.on('interactionCreate', async interaction => {
   if (!interaction.isChatInputCommand()) return;
-  if (!allowed(interaction.member)) {
-    await interaction.deferReply({ ephemeral: true });
-    return;
-  }
+  if (!allowed(interaction.member)) return interaction.deferReply({ ephemeral: true });
 
+  /* =============== RULES ================= */
   if (interaction.commandName === 'rules') {
-    interaction.channel.send(
-`Rules:
+    interaction.channel.send({
+      content: `**Rules**
+
 Be respectful
-No NSFW
-No spam
-No ads
-No threats`
-    );
+You must respect all users, regardless of your liking towards them. Treat others the way you want to be treated.
+
+No Inappropriate Language
+The use of profanity should be kept to a minimum. However, any derogatory language towards any user is prohibited.
+
+No spamming
+Don't send a lot of small messages right after each other. Do not disrupt chat by spamming.
+
+No pornographic/adult/other NSFW material
+This is a community server and not meant to share this kind of material.
+
+No advertisements
+We do not tolerate any kind of advertisements, whether it be for other communities or streams. You can post your content in the media channel if it is relevant and provides actual value (Video/Art)
+
+No offensive names and profile pictures
+You will be asked to change your name or picture if the staff deems them inappropriate.
+
+Server Raiding
+Raiding or mentions of raiding are not allowed.
+
+Direct & Indirect Threats
+Threats to other users of DDoS, Death, DoX, abuse, and other malicious threats are absolutely prohibited and disallowed.
+
+Follow the Discord Community Guidelines
+You can find them here: https://discordapp.com/guidelines
+
+**Warning System**
+
+First Warning
+No action will be taken.
+
+Second Warning
+1 Hour Mute
+
+Third Warning
+1 Day Mute
+
+Fourth Warning
+1 Week Ban
+
+Fifth Warning
+Permanent Ban`
+    });
   }
 
+  /* =============== INVITE REWARD ================= */
   if (interaction.commandName === 'invitereward') {
-    interaction.channel.send(
-`Anyone who you invite gets 10 robux.
-
-Join group:
-https://www.roblox.com/share/g/46230128`
+    const row = new ActionRowBuilder().addComponents(
+      new ButtonBuilder()
+        .setLabel('Join Group')
+        .setStyle(ButtonStyle.Link)
+        .setURL('https://www.roblox.com/share/g/46230128')
     );
+
+    interaction.channel.send({
+      content: `Anyone who you invite gets 10 robux for joining this discord. For me to send you robux, you must be in this group for 2 weeks.  
+It's up to you if you want to split it between the both of you, for example 5 to you and 5 to your friend, as long as I get proof of you both saying it's ok 🙂.  
+I will keep logs of people who have claimed, and invites will get reset after claim so you can't claim twice.`,
+      components: [row]
+    });
   }
 
+  /* =============== BAN ================= */
   if (interaction.commandName === 'ban') {
     const user = interaction.options.getUser('user');
     const member = await interaction.guild.members.fetch(user.id);
     await warn(member, 'Manual ban command');
   }
 
+  /* =============== UNBAN ================= */
   if (interaction.commandName === 'unban') {
-    await interaction.guild.members.unban(
-      interaction.options.getUser('user').id
-    );
+    await interaction.guild.members.unban(interaction.options.getUser('user').id);
   }
 
+  /* =============== REVOKE ================= */
   if (interaction.commandName === 'revoke') {
     await pool.query(
-      `UPDATE warnings SET count = GREATEST(count - $1, 0) WHERE user_id = $2`,
-      [
-        interaction.options.getInteger('amount'),
-        interaction.options.getUser('user').id
-      ]
+      `UPDATE warnings SET count = GREATEST(count - $1, 0) WHERE user_id=$2`,
+      [interaction.options.getInteger('amount'), interaction.options.getUser('user').id]
     );
   }
 
+  /* =============== NUKE ================= */
   if (interaction.commandName === 'nuke') {
     const c = interaction.channel;
     const clone = await c.clone();
@@ -341,16 +345,13 @@ https://www.roblox.com/share/g/46230128`
     clone.setPosition(c.position);
   }
 
+  /* =============== GIVEAWAY ================= */
   if (interaction.commandName === 'giveaway') {
     const prize = interaction.options.getString('prize');
     const minutes = interaction.options.getInteger('minutes');
-
-    const msg = await interaction.channel.send(
-      `🎉 Giveaway: **${prize}**
+    const msg = await interaction.channel.send(`🎉 Giveaway: **${prize}**
 React with 🎉 to enter!
-Ends in ${minutes} minutes`
-    );
-
+Ends in ${minutes} minutes`);
     await msg.react('🎉');
 
     await pool.query(
@@ -364,43 +365,27 @@ Ends in ${minutes} minutes`
 
 /* ================= GIVEAWAY CHECK ================= */
 setInterval(async () => {
-  const r = await pool.query(
-    `SELECT * FROM giveaways WHERE end_time <= $1`,
-    [Date.now()]
-  );
-
+  const r = await pool.query(`SELECT * FROM giveaways WHERE end_time <= $1`, [Date.now()]);
   for (const g of r.rows) {
-    const channel = await client.channels.fetch(g.channel_id);
-    const message = await channel.messages.fetch(g.message_id);
-    const users = (
-      await message.reactions.cache.get('🎉').users.fetch()
-    ).filter(u => !u.bot);
-
+    const ch = await client.channels.fetch(g.channel_id);
+    const msg = await ch.messages.fetch(g.message_id);
+    const users = (await msg.reactions.cache.get('🎉').users.fetch()).filter(u => !u.bot);
     if (users.size > 0) {
       const winner = users.random();
-      channel.send(`🎉 Winner: ${winner} | Prize: **${g.prize}**`);
+      ch.send(`🎉 Winner: ${winner} | Prize: **${g.prize}**`);
     }
-
-    await pool.query(`DELETE FROM giveaways WHERE message_id = $1`, [
-      g.message_id
-    ]);
+    await pool.query(`DELETE FROM giveaways WHERE message_id=$1`, [g.message_id]);
   }
 }, 15000);
 
 /* ================= WEBSITE ================= */
-app.get('/', (_, res) => {
-  res.sendFile(__dirname + '/index.html');
-});
-
+app.get('/', (_, res) => res.sendFile(__dirname + '/index.html'));
 app.post('/apply', async (req, res) => {
   const { username, userid, reason } = req.body;
-
   await pool.query(
-    `INSERT INTO mod_apps(username, user_id, reason)
-     VALUES($1,$2,$3)`,
+    `INSERT INTO mod_apps(username,user_id,reason) VALUES($1,$2,$3)`,
     [username, userid, reason]
   );
-
   res.send('Application submitted.');
 });
 
