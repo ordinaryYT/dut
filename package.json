@@ -1,0 +1,14 @@
+{
+  "name": "dutz-dungeon",
+  "version": "1.0.0",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "dependencies": {
+    "discord.js": "^14.14.1",
+    "express": "^4.19.2",
+    "pg": "^8.11.3",
+    "node-fetch": "^3.3.2"
+  }
+}
