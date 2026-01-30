@@ -12,7 +12,8 @@ const {
 } = require('discord.js');
 
 const express = require('express');
-const fetch = require('node-fetch');
+// Fixed fetch import
+const fetch = (...args) => import('node-fetch').then(({default: fetch}) => fetch(...args));
 const { Pool } = require('pg');
 
 const app = express();
@@ -249,7 +250,7 @@ client.on('interactionCreate', async interaction => {
   if (!interaction.isChatInputCommand()) return;
   if (!allowed(interaction.member)) return interaction.deferReply({ ephemeral: true });
 
-  /* =============== RULES ================= */
+  /* RULES */
   if (interaction.commandName === 'rules') {
     interaction.channel.send({
       content: `**Rules**
@@ -300,7 +301,7 @@ Permanent Ban`
     });
   }
 
-  /* =============== INVITE REWARD ================= */
+  /* INVITE REWARD */
   if (interaction.commandName === 'invitereward') {
     const row = new ActionRowBuilder().addComponents(
       new ButtonBuilder()
@@ -317,19 +318,19 @@ I will keep logs of people who have claimed, and invites will get reset after cl
     });
   }
 
-  /* =============== BAN ================= */
+  /* BAN */
   if (interaction.commandName === 'ban') {
     const user = interaction.options.getUser('user');
     const member = await interaction.guild.members.fetch(user.id);
     await warn(member, 'Manual ban command');
   }
 
-  /* =============== UNBAN ================= */
+  /* UNBAN */
   if (interaction.commandName === 'unban') {
     await interaction.guild.members.unban(interaction.options.getUser('user').id);
   }
 
-  /* =============== REVOKE ================= */
+  /* REVOKE */
   if (interaction.commandName === 'revoke') {
     await pool.query(
       `UPDATE warnings SET count = GREATEST(count - $1, 0) WHERE user_id=$2`,
@@ -337,7 +338,7 @@ I will keep logs of people who have claimed, and invites will get reset after cl
     );
   }
 
-  /* =============== NUKE ================= */
+  /* NUKE */
   if (interaction.commandName === 'nuke') {
     const c = interaction.channel;
     const clone = await c.clone();
@@ -345,7 +346,7 @@ I will keep logs of people who have claimed, and invites will get reset after cl
     clone.setPosition(c.position);
   }
 
-  /* =============== GIVEAWAY ================= */
+  /* GIVEAWAY */
   if (interaction.commandName === 'giveaway') {
     const prize = interaction.options.getString('prize');
     const minutes = interaction.options.getInteger('minutes');
