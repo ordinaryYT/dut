@@ -16,7 +16,6 @@
     <div class="flex gap-6 text-sm text-zinc-300">
       <button onclick="show('home')">Home</button>
       <button onclick="show('clips')">Clips</button>
-      <button onclick="show('donate')">Donate</button>
       <button onclick="show('gifters')">Gifters</button>
       <button onclick="show('staff')">Staff</button>
     </div>
@@ -25,42 +24,25 @@
 
 <div class="pt-28">
 
-<!-- HOME -->
 <section id="home" class="section min-h-[80vh] flex items-center px-6">
   <div class="max-w-7xl mx-auto">
     <h1 class="text-6xl font-extrabold">
       THE<span class="text-indigo-500">BIG</span>DUTZ
     </h1>
-    <p class="text-zinc-400 mt-6">
-      Fortnite • TikTok • Live Streaming
-    </p>
+    <p class="text-zinc-400 mt-6">Fortnite • TikTok • Live Streaming</p>
   </div>
 </section>
 
-<!-- CLIPS -->
 <section id="clips" class="section hidden px-6 py-20">
   <h2 class="text-4xl font-bold mb-10">🔥 Best Fortnite Clips</h2>
   <div id="clipsGrid" class="grid md:grid-cols-3 gap-8"></div>
 </section>
 
-<!-- DONATE (unchanged) -->
-<section id="donate" class="section hidden px-6 py-20">
-  <h2 class="text-4xl font-bold mb-10">💰 Support the Stream</h2>
-
-  <div class="space-y-10">
-    <div data-upgrade-chat-embed="a32cc51c-26aa-4e46-abdd-7c0f4acf3755"></div>
-  </div>
-
-  <script src="https://upgrade.chat/embed/embed.js"></script>
-</section>
-
-<!-- GIFTERS -->
 <section id="gifters" class="section hidden px-6 py-20">
   <h2 class="text-4xl font-bold mb-10">🏆 Top Gifter Clips</h2>
   <div id="giftersGrid" class="grid md:grid-cols-3 gap-8"></div>
 </section>
 
-<!-- STAFF -->
 <section id="staff" class="section hidden px-6 py-20 text-center">
   <h2 class="text-4xl font-bold mb-6">Apply for Staff</h2>
   <a href="/auth/discord" class="bg-indigo-600 px-8 py-4 rounded-xl inline-block">
@@ -76,31 +58,15 @@ function show(id) {
   document.getElementById(id).classList.remove('hidden');
 }
 
-fetch('/clips')
-  .then(r => r.json())
-  .then(d => {
-    const clipsGrid = document.getElementById('clipsGrid');
-    const giftersGrid = document.getElementById('giftersGrid');
-
-    d.clips.forEach(url => {
-      clipsGrid.innerHTML += `
-        <blockquote class="tiktok-embed">
-          <a href="${url}"></a>
-        </blockquote>`;
-    });
-
-    d.gifters.forEach(url => {
-      giftersGrid.innerHTML += `
-        <blockquote class="tiktok-embed">
-          <a href="${url}"></a>
-        </blockquote>`;
-    });
-
-    // force TikTok to re-scan embeds
-    setTimeout(() => {
-      if (window.tiktokEmbed) window.tiktokEmbed.load();
-    }, 500);
+fetch('/clips').then(r=>r.json()).then(d=>{
+  d.clips.forEach(u=>{
+    clipsGrid.innerHTML+=`<blockquote class="tiktok-embed"><a href="${u}"></a></blockquote>`;
   });
+  d.gifters.forEach(u=>{
+    giftersGrid.innerHTML+=`<blockquote class="tiktok-embed"><a href="${u}"></a></blockquote>`;
+  });
+  setTimeout(()=>window.tiktokEmbed?.load(),500);
+});
 </script>
 
 </body>
