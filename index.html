@@ -5,7 +5,6 @@
 <title>TheBigDutz</title>
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <script src="https://cdn.tailwindcss.com"></script>
-<script async src="https://www.tiktok.com/embed.js"></script>
 </head>
 
 <body class="bg-gradient-to-br from-zinc-950 via-zinc-900 to-black text-white">
@@ -29,18 +28,18 @@
     <h1 class="text-6xl font-extrabold">
       THE<span class="text-indigo-500">BIG</span>DUTZ
     </h1>
-    <p class="text-zinc-400 mt-6">Fortnite • TikTok • Live Streaming</p>
+    <p class="text-zinc-400 mt-6">Fortnite • Streaming • Community</p>
   </div>
 </section>
 
 <section id="clips" class="section hidden px-6 py-20">
-  <h2 class="text-4xl font-bold mb-10">🔥 Best Fortnite Clips</h2>
-  <div id="clipsGrid" class="grid md:grid-cols-3 gap-8"></div>
+  <h2 class="text-4xl font-bold mb-10">🔥 Clips</h2>
+  <div id="clipsGrid" class="grid md:grid-cols-2 gap-8"></div>
 </section>
 
 <section id="gifters" class="section hidden px-6 py-20">
-  <h2 class="text-4xl font-bold mb-10">🏆 Top Gifter Clips</h2>
-  <div id="giftersGrid" class="grid md:grid-cols-3 gap-8"></div>
+  <h2 class="text-4xl font-bold mb-10">🏆 Top Gifters</h2>
+  <div id="giftersGrid" class="grid md:grid-cols-2 gap-8"></div>
 </section>
 
 <section id="staff" class="section hidden px-6 py-20 text-center">
@@ -62,13 +61,21 @@ function show(id) {
 fetch('/clips')
   .then(r => r.json())
   .then(d => {
-    d.clips.forEach(u => {
-      clipsGrid.innerHTML += `<blockquote class="tiktok-embed"><a href="${u}"></a></blockquote>`;
+    d.clips.forEach(html => {
+      clipsGrid.innerHTML += `
+        <div class="aspect-video rounded-xl overflow-hidden">
+          ${html}
+        </div>
+      `;
     });
-    d.gifters.forEach(u => {
-      giftersGrid.innerHTML += `<blockquote class="tiktok-embed"><a href="${u}"></a></blockquote>`;
+
+    d.gifters.forEach(html => {
+      giftersGrid.innerHTML += `
+        <div class="aspect-video rounded-xl overflow-hidden">
+          ${html}
+        </div>
+      `;
     });
-    setTimeout(() => window.tiktokEmbed?.load(), 500);
   });
 </script>
 
