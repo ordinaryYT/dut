@@ -8,84 +8,53 @@
 <script async src="https://www.tiktok.com/embed.js"></script>
 </head>
 
-<body class="bg-gradient-to-br from-zinc-950 via-zinc-900 to-black text-white">
+<body class="bg-black text-white">
 
-<nav class="fixed top-0 w-full backdrop-blur bg-black/40 border-b border-white/10 z-50">
-  <div class="max-w-7xl mx-auto flex justify-between px-6 py-4">
-    <span class="font-bold text-xl">TheBigDutz</span>
-    <div class="flex gap-6 text-sm text-zinc-300">
-      <button onclick="show('home')">Home</button>
-      <button onclick="show('clips')">Clips</button>
-      <button onclick="show('donate')">Donate</button>
-      <button onclick="show('gifters')">Gifters</button>
-      <button onclick="show('staff')">Staff</button>
-    </div>
-  </div>
+<nav class="fixed top-0 w-full bg-black/70 border-b border-white/10 p-4 flex gap-6">
+  <button onclick="show('home')">Home</button>
+  <button onclick="show('clips')">Clips</button>
+  <button onclick="show('gifters')">Gifters</button>
+  <button onclick="show('staff')">Staff</button>
 </nav>
 
-<div class="pt-28">
+<div class="pt-20 px-6">
 
-<section id="home" class="section min-h-[80vh] flex items-center px-6">
-  <div class="max-w-7xl mx-auto">
-    <h1 class="text-6xl font-extrabold">
-      THE<span class="text-indigo-500">BIG</span>DUTZ
-    </h1>
-    <p class="text-zinc-400 mt-6">
-      Fortnite • TikTok • Live Streaming
-    </p>
-  </div>
+<section id="home" class="section">
+  <h1 class="text-5xl font-bold">THE<span class="text-indigo-500">BIG</span>DUTZ</h1>
 </section>
 
-<section id="clips" class="section hidden px-6 py-20">
-  <h2 class="text-4xl font-bold mb-10">🔥 Best Fortnite Clips</h2>
-  <div id="clips" class="grid md:grid-cols-3 gap-8"></div>
+<section id="clips" class="section hidden">
+  <h2 class="text-3xl my-6">Clips</h2>
+  <div id="clipsGrid" class="grid md:grid-cols-3 gap-6"></div>
 </section>
 
-<section id="donate" class="section hidden px-6 py-20">
-  <h2 class="text-4xl font-bold mb-10">💰 Support the Stream</h2>
-
-  <div class="space-y-10">
-    <div data-upgrade-chat-embed="a32cc51c-26aa-4e46-abdd-7c0f4acf3755" data-upgrade-chat-products="4a6ca5b9-ccac-4680-af7b-294c817469ee" data-upgrade-chat-baseurl="https://upgrade.chat"></div>
-    <div data-upgrade-chat-embed="a32cc51c-26aa-4e46-abdd-7c0f4acf3755" data-upgrade-chat-products="ecfbc908-aef4-4774-86cb-fb7a905a0123" data-upgrade-chat-baseurl="https://upgrade.chat"></div>
-    <div data-upgrade-chat-embed="a32cc51c-26aa-4e46-abdd-7c0f4acf3755" data-upgrade-chat-products="3e999e8e-83e5-4fcd-85da-effa5a3e0e11" data-upgrade-chat-baseurl="https://upgrade.chat"></div>
-    <div data-upgrade-chat-embed="a32cc51c-26aa-4e46-abdd-7c0f4acf3755" data-upgrade-chat-products="3d55a507-6d35-4ca9-be4b-3de7776e19ce" data-upgrade-chat-baseurl="https://upgrade.chat"></div>
-    <div data-upgrade-chat-embed="a32cc51c-26aa-4e46-abdd-7c0f4acf3755" data-upgrade-chat-products="737fe543-c48e-48dc-9860-2699ac7d9a19" data-upgrade-chat-baseurl="https://upgrade.chat"></div>
-    <div data-upgrade-chat-embed="a32cc51c-26aa-4e46-abdd-7c0f4acf3755" data-upgrade-chat-products="7f6e279f-8d9c-402c-a75f-939c25bec2f1" data-upgrade-chat-baseurl="https://upgrade.chat"></div>
-  </div>
-
-  <script src="https://upgrade.chat/embed/embed.js"></script>
+<section id="gifters" class="section hidden">
+  <h2 class="text-3xl my-6">Gifters</h2>
+  <div id="giftersGrid" class="grid md:grid-cols-3 gap-6"></div>
 </section>
 
-<section id="gifters" class="section hidden px-6 py-20">
-  <h2 class="text-4xl font-bold mb-10">🏆 Top Gifter Clips</h2>
-  <div id="gifters" class="grid md:grid-cols-3 gap-8"></div>
-</section>
-
-<section id="staff" class="section hidden px-6 py-20 text-center">
-  <h2 class="text-4xl font-bold mb-6">Apply for Staff</h2>
-  <a href="/auth/discord" class="bg-indigo-600 px-8 py-4 rounded-xl">
-    Login with Discord
-  </a>
+<section id="staff" class="section hidden">
+  <h2 class="text-3xl my-6">Staff</h2>
+  <a href="/auth/discord" class="bg-indigo-600 px-6 py-3 rounded">Login with Discord</a>
 </section>
 
 </div>
 
 <script>
-function show(id) {
-  document.querySelectorAll('.section').forEach(s => s.classList.add('hidden'));
+function show(id){
+  document.querySelectorAll('.section').forEach(s=>s.classList.add('hidden'));
   document.getElementById(id).classList.remove('hidden');
 }
 
-fetch('/clips')
-  .then(r => r.json())
-  .then(d => {
-    d.clips.forEach(u => {
-      clips.innerHTML += `<blockquote class="tiktok-embed"><a href="${u}"></a></blockquote>`;
-    });
-    d.gifters.forEach(u => {
-      gifters.innerHTML += `<blockquote class="tiktok-embed"><a href="${u}"></a></blockquote>`;
-    });
+fetch('/clips').then(r=>r.json()).then(d=>{
+  d.clips.forEach(u=>{
+    clipsGrid.innerHTML+=`<blockquote class="tiktok-embed"><a href="${u}"></a></blockquote>`;
   });
+  d.gifters.forEach(u=>{
+    giftersGrid.innerHTML+=`<blockquote class="tiktok-embed"><a href="${u}"></a></blockquote>`;
+  });
+  setTimeout(()=>window.tiktokEmbed?.load(),500);
+});
 </script>
 
 </body>
