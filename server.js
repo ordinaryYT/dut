@@ -9,7 +9,8 @@ const {
 } = require('discord.js');
 
 const express = require('express');
-const fetch = (...args) => import('node-fetch').then(({ default: fetch }) => fetch(...args));
+const fetch = (...args) =>
+  import('node-fetch').then(({ default: fetch }) => fetch(...args));
 const { Pool } = require('pg');
 
 const app = express();
@@ -35,12 +36,6 @@ const pool = new Pool({
       user_id TEXT,
       reason TEXT,
       submitted_at TIMESTAMP DEFAULT NOW()
-    );
-    CREATE TABLE IF NOT EXISTS giveaways (
-      message_id TEXT PRIMARY KEY,
-      channel_id TEXT,
-      end_time BIGINT,
-      prize TEXT
     );
   `);
 })();
@@ -79,8 +74,8 @@ app.get('/', (_, res) => {
 
 app.get('/clips', (_, res) => {
   res.json({
-    clips: (process.env.TIKTOK_CLIPS || '').split(',').filter(Boolean),
-    gifters: (process.env.GIFTER_CLIPS || '').split(',').filter(Boolean)
+    clips: (process.env.CLIPS_EMBEDS || '').split(',').filter(Boolean),
+    gifters: (process.env.GIFTER_EMBEDS || '').split(',').filter(Boolean)
   });
 });
 
@@ -88,10 +83,10 @@ app.get('/clips', (_, res) => {
 app.get('/auth/discord', (_, res) => {
   res.redirect(
     `https://discord.com/oauth2/authorize` +
-    `?client_id=${process.env.CLIENT_ID}` +
-    `&redirect_uri=${encodeURIComponent(process.env.REDIRECT_URI)}` +
-    `&response_type=code` +
-    `&scope=identify`
+      `?client_id=${process.env.CLIENT_ID}` +
+      `&redirect_uri=${encodeURIComponent(process.env.REDIRECT_URI)}` +
+      `&response_type=code` +
+      `&scope=identify`
   );
 });
 
@@ -120,70 +115,17 @@ app.get('/auth/callback', async (req, res) => {
     [user.username, user.id, 'Website application']
   );
 
-  const channel = await client.channels.fetch(process.env.STAFF_APPS_CHANNEL_ID);
-  channel.send(
-    `📋 **Staff Application**\n` +
-    `User: **${user.username}**\nID: \`${user.id}\``
-  );
-
-  res.send('✅ Application submitted. You may close this page.');
-});
-
-/* ================= ROLE CHECK ================= */
-function allowed(member) {
-  return (
-    member.roles.cache.has(process.env.STAFF_ROLE_ID) ||
-    member.roles.cache.has(process.env.MOD_ROLE_ID) ||
-    member.roles.cache.has(process.env.ADMIN_ROLE_ID)
-  );
-}
-
-/* ================= WARNINGS ================= */
-async function warn(member, rule) {
-  const r = await pool.query(
-    `INSERT INTO warnings(user_id, count)
-     VALUES($1, 1)
-     ON CONFLICT (user_id)
-     DO UPDATE SET count = warnings.count + 1
-     RETURNING count`,
-    [member.id]
-  );
-
-  const count = r.rows[0].count;
-  await member.send(`Rule broken: ${rule}`);
-
-  const log = member.guild.channels.cache.get(process.env.STAFF_LOG_CHANNEL_ID);
-  log?.send(`${member} | ${rule} | Warning ${count}`);
-
-  if (count === 2) await member.timeout(60 * 60 * 1000);
-  if (count === 3) await member.timeout(24 * 60 * 60 * 1000);
-  if (count >= 4) await member.roles.add(process.env.WEEK_BAN_ROLE_ID);
-}
-
-/* ================= AUTOMOD & TICKETS ================= */
-client.ticketState = {};
-
-client.on('messageCreate', async message => {
-  if (message.author.bot) return;
-
-  if (message.mentions.users.has(process.env.PING_FORBIDDEN_USER_ID)) {
-    await warn(message.member, 'Pinged forbidden user');
-    await message.member.send(await ai('Do not ping that user.'));
-  }
-
-  const badWords = ['nsfw', 'porn', 'raid', 'ddos', 'dox'];
-  if (badWords.some(w => message.content.toLowerCase().includes(w))) {
-    await warn(message.member, 'Inappropriate content');
-  }
-});
-
-/* ================= INTERACTIONS ================= */
-client.on('interactionCreate', async interaction => {
-  if (interaction.isChatInputCommand()) {
-    if (!allowed(interaction.member)) {
-      return interaction.reply({ content: '❌ Not allowed.', flags: 64 });
+  const staffChannelId = process.env.STAFF_APPS_CHANNEL_ID;
+  if (staffChannelId) {
+    const ch = await client.channels.fetch(staffChannelId).catch(() => null);
+    if (ch) {
+      await ch.send(
+        `📋 **Staff Application**\nUser: **${user.username}**\nID: \`${user.id}\``
+      );
     }
   }
+
+  res.send('✅ Application submitted. You may close this page.');
 });
 
 /* ================= START ================= */
