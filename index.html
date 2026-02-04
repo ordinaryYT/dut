@@ -45,7 +45,8 @@
 
 <section id="staff" class="section hidden px-6 py-20 text-center">
   <h2 class="text-4xl font-bold mb-6">Apply for Staff</h2>
-  <a href="/auth/discord" class="bg-indigo-600 px-8 py-4 rounded-xl inline-block">
+  <a href="/auth/discord"
+     class="bg-indigo-600 px-8 py-4 rounded-xl inline-block">
     Login with Discord
   </a>
 </section>
@@ -58,15 +59,17 @@ function show(id) {
   document.getElementById(id).classList.remove('hidden');
 }
 
-fetch('/clips').then(r=>r.json()).then(d=>{
-  d.clips.forEach(u=>{
-    clipsGrid.innerHTML+=`<blockquote class="tiktok-embed"><a href="${u}"></a></blockquote>`;
+fetch('/clips')
+  .then(r => r.json())
+  .then(d => {
+    d.clips.forEach(u => {
+      clipsGrid.innerHTML += `<blockquote class="tiktok-embed"><a href="${u}"></a></blockquote>`;
+    });
+    d.gifters.forEach(u => {
+      giftersGrid.innerHTML += `<blockquote class="tiktok-embed"><a href="${u}"></a></blockquote>`;
+    });
+    setTimeout(() => window.tiktokEmbed?.load(), 500);
   });
-  d.gifters.forEach(u=>{
-    giftersGrid.innerHTML+=`<blockquote class="tiktok-embed"><a href="${u}"></a></blockquote>`;
-  });
-  setTimeout(()=>window.tiktokEmbed?.load(),500);
-});
 </script>
 
 </body>
