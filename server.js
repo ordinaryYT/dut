@@ -127,20 +127,17 @@ async function warn(member, rule) {
 client.on('messageCreate', async message => {
   if (message.author.bot) return;
 
-  // Ping abuse
   if (message.mentions.users.has(process.env.PING_FORBIDDEN_USER_ID)) {
     await warn(message.member, 'Pinged forbidden user');
     const dm = await ai(`You pinged a forbidden user in ${message.guild.name}. Please follow the rules.`);
     await message.member.send(dm).catch(() => {});
   }
 
-  // Bad words
   const badWords = ['nsfw', 'porn', 'raid', 'ddos', 'dox'];
   if (badWords.some(w => message.content.toLowerCase().includes(w))) {
     await warn(message.member, 'Inappropriate content');
   }
 
-  // Sticky messages
   if ([process.env.STICKY_CHANNEL1_ID, process.env.STICKY_CHANNEL2_ID].includes(message.channel.id)) {
     const stickMsg = `__**Stickied Message:**__\n\n# Info\n\n**Absolutely no discussions here, use appropriate channels.**\n⚠️ Side chatting = <@&1466114901020519>`;
     const msgs = await message.channel.messages.fetch({ limit: 10 });
@@ -158,7 +155,7 @@ client.on('messageCreate', async message => {
   }
 });
 
-/* ================= TICKET SYSTEM ================= */
+/* ================= TICKET + SLASH COMMANDS ================= */
 client.on('interactionCreate', async interaction => {
   if (!interaction.isButton() && !interaction.isChatInputCommand()) return;
 
@@ -187,7 +184,7 @@ client.on('interactionCreate', async interaction => {
       await interaction.reply({ content: 'Ticket created!', ephemeral: true });
     }
 
-    // Ticket control buttons
+    // Ticket buttons
     if (interaction.isButton()) {
       const channel = interaction.channel;
       const state = client.ticketState[channel?.id];
@@ -299,60 +296,87 @@ app.get('/clips', (req, res) => {
   });
 });
 
-/* ================= DISCORD OAUTH ================= */
+/* ================= DISCORD OAUTH (using separate auth-only app) ================= */
 const sessions = new Map();
 
 app.get('/auth/discord', (req, res) => {
-  const redirect = `https://discord.com/oauth2/authorize?` +
-    `client_id=${process.env.CLIENT_ID}` +
+  if (!process.env.CLIENT_ID_AUTH || !process.env.CLIENT_SECRET_AUTH) {
+    console.error('[AUTH] Missing CLIENT_ID_AUTH or CLIENT_SECRET_AUTH env vars');
+    return res.status(500).send('Server configuration error – contact admin');
+  }
+
+  const authorizeUrl = `https://discord.com/oauth2/authorize?` +
+    `client_id=${process.env.CLIENT_ID_AUTH}` +
     `&redirect_uri=${encodeURIComponent(process.env.REDIRECT_URI)}` +
     `&response_type=code&scope=identify`;
-  res.redirect(redirect);
+
+  console.log('[AUTH] Redirecting to Discord → client_id:', process.env.CLIENT_ID_AUTH);
+  res.redirect(authorizeUrl);
 });
 
 app.get('/auth/callback', async (req, res) => {
   try {
     if (!req.query.code) {
-      console.log('No code in callback');
-      return res.status(400).send('No authorization code received');
+      console.log('[AUTH] No code parameter received');
+      return res.status(400).send('No authorization code received from Discord');
     }
 
-    console.log('Callback hit | code:', req.query.code);
-    console.log('Using redirect_uri:', process.env.REDIRECT_URI);
+    console.log('[AUTH] Callback hit | code prefix:', req.query.code.substring(0, 12) + '...');
+    console.log('[AUTH] Using client_id:', process.env.CLIENT_ID_AUTH);
 
-    const tokenRes = await fetch('https://discord.com/api/oauth2/token', {
+    const tokenResponse = await fetch('https://discord.com/api/oauth2/token', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      headers: {
+        'Content-Type': 'application/x-www-form-urlencoded'
+      },
       body: new URLSearchParams({
-        client_id: process.env.CLIENT_ID,
-        client_secret: process.env.CLIENT_SECRET,
+        client_id: process.env.CLIENT_ID_AUTH,
+        client_secret: process.env.CLIENT_SECRET_AUTH,
         grant_type: 'authorization_code',
         code: req.query.code,
         redirect_uri: process.env.REDIRECT_URI
       })
     });
 
-    console.log('Token response status:', tokenRes.status);
+    console.log('[AUTH] Discord token endpoint responded with status:', tokenResponse.status);
 
-    if (!tokenRes.ok) {
-      const errorText = await tokenRes.text();
-      console.error('Discord OAuth error:', errorText);
-      return res.status(500).send(`Discord error: ${tokenRes.status} - ${errorText.slice(0, 300)}`);
+    if (!tokenResponse.ok) {
+      const errorBody = await tokenResponse.text();
+      console.error('[AUTH] Discord error:', tokenResponse.status, errorBody.substring(0, 600));
+
+      if (tokenResponse.status === 429) {
+        return res.status(429).send(`
+          <h1>Rate Limited by Discord</h1>
+          <p>Too many login attempts from this server right now (common on shared hosting like Render).<br>
+          Please wait 1–24 hours and try again. You can refresh this page later.</p>
+        `);
+      }
+
+      return res.status(500).send(`Discord login failed (error ${tokenResponse.status}). Please try again later.`);
     }
 
-    const token = await tokenRes.json();
+    const tokenData = await tokenResponse.json();
 
-    const userRes = await fetch('https://discord.com/api/users/@me', {
-      headers: { Authorization: `Bearer ${token.access_token}` }
+    const userResponse = await fetch('https://discord.com/api/users/@me', {
+      headers: {
+        Authorization: `Bearer ${tokenData.access_token}`
+      }
     });
 
-    const user = await userRes.json();
+    if (!userResponse.ok) {
+      console.error('[AUTH] User info fetch failed:', userResponse.status);
+      throw new Error('Failed to get user information');
+    }
+
+    const user = await userResponse.json();
 
     sessions.set(user.id, user);
+    console.log('[AUTH] Login successful for user:', user.id, user.username);
+
     res.redirect(`/?uid=${user.id}`);
-  } catch (err) {
-    console.error('Callback crash:', err);
-    res.status(500).send('OAuth callback failed – check logs');
+  } catch (error) {
+    console.error('[AUTH] OAuth callback crashed:', error.message, error.stack?.substring(0, 300));
+    res.status(500).send('Something went wrong during login. Please try again or contact support.');
   }
 });
 
