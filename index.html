@@ -5,6 +5,7 @@
 <title>TheBigDutz</title>
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <script src="https://cdn.tailwindcss.com"></script>
+<script async src="https://www.tiktok.com/embed.js"></script>
 </head>
 
 <body class="bg-gradient-to-br from-zinc-950 via-zinc-900 to-black text-white">
@@ -28,55 +29,77 @@
     <h1 class="text-6xl font-extrabold">
       THE<span class="text-indigo-500">BIG</span>DUTZ
     </h1>
-    <p class="text-zinc-400 mt-6">Fortnite • Streaming • Community</p>
+    <p class="text-zinc-400 mt-6">Fortnite • TikTok • Live Streaming</p>
   </div>
 </section>
 
 <section id="clips" class="section hidden px-6 py-20">
-  <h2 class="text-4xl font-bold mb-10">🔥 Clips</h2>
-  <div id="clipsGrid" class="grid md:grid-cols-2 gap-8"></div>
+  <h2 class="text-4xl font-bold mb-10">🔥 Best Fortnite Clips</h2>
+  <div id="clipsGrid" class="grid md:grid-cols-3 gap-8"></div>
 </section>
 
 <section id="gifters" class="section hidden px-6 py-20">
-  <h2 class="text-4xl font-bold mb-10">🏆 Top Gifters</h2>
-  <div id="giftersGrid" class="grid md:grid-cols-2 gap-8"></div>
+  <h2 class="text-4xl font-bold mb-10">🏆 Top Gifter Clips</h2>
+  <div id="giftersGrid" class="grid md:grid-cols-3 gap-8"></div>
 </section>
 
-<section id="staff" class="section hidden px-6 py-20 text-center">
-  <h2 class="text-4xl font-bold mb-6">Apply for Staff</h2>
-  <a href="/auth/discord"
-     class="bg-indigo-600 px-8 py-4 rounded-xl inline-block">
-    Login with Discord
-  </a>
+<section id="staff" class="section hidden px-6 py-20 max-w-xl mx-auto">
+  <h2 class="text-4xl font-bold mb-6 text-center">Apply for Staff</h2>
+
+  <div id="loginBox" class="text-center">
+    <a href="/auth/discord"
+       class="bg-indigo-600 px-8 py-4 rounded-xl inline-block font-bold">
+      Login with Discord
+    </a>
+  </div>
+
+  <form id="appForm" class="hidden space-y-5 mt-10">
+    <input name="age" placeholder="Age" class="w-full p-3 bg-zinc-900 rounded-xl" required>
+    <input name="timezone" placeholder="Timezone" class="w-full p-3 bg-zinc-900 rounded-xl" required>
+    <textarea name="experience" placeholder="Staff experience" class="w-full p-3 bg-zinc-900 rounded-xl" required></textarea>
+    <textarea name="reason" placeholder="Why should we accept you?" class="w-full p-3 bg-zinc-900 rounded-xl" required></textarea>
+    <button class="bg-green-600 px-6 py-3 rounded-xl font-bold w-full">Submit</button>
+  </form>
+
+  <div id="done" class="hidden text-green-400 font-bold text-center mt-8">
+    ✅ Application submitted. You may close this page.
+  </div>
 </section>
 
 </div>
 
 <script>
-function show(id) {
-  document.querySelectorAll('.section').forEach(s => s.classList.add('hidden'));
-  document.getElementById(id).classList.remove('hidden');
+function show(id){
+  document.querySelectorAll('.section').forEach(s=>s.classList.add('hidden'))
+  document.getElementById(id).classList.remove('hidden')
 }
 
-fetch('/clips')
-  .then(r => r.json())
-  .then(d => {
-    d.clips.forEach(html => {
-      clipsGrid.innerHTML += `
-        <div class="aspect-video rounded-xl overflow-hidden">
-          ${html}
-        </div>
-      `;
-    });
+const uid = new URLSearchParams(window.location.search).get('uid')
+if(uid){
+  loginBox.classList.add('hidden')
+  appForm.classList.remove('hidden')
+}
 
-    d.gifters.forEach(html => {
-      giftersGrid.innerHTML += `
-        <div class="aspect-video rounded-xl overflow-hidden">
-          ${html}
-        </div>
-      `;
-    });
-  });
+appForm?.addEventListener('submit', async e=>{
+  e.preventDefault()
+  const fd = new FormData(appForm)
+  fd.append('uid', uid)
+  const r = await fetch('/apply', { method:'POST', body: fd })
+  if(r.ok){
+    appForm.classList.add('hidden')
+    done.classList.remove('hidden')
+  }
+})
+
+fetch('/clips').then(r=>r.json()).then(d=>{
+  d.clips.forEach(u=>{
+    clipsGrid.innerHTML+=`<blockquote class="tiktok-embed"><a href="${u}"></a></blockquote>`
+  })
+  d.gifters.forEach(u=>{
+    giftersGrid.innerHTML+=`<blockquote class="tiktok-embed"><a href="${u}"></a></blockquote>`
+  })
+  setTimeout(()=>window.tiktokEmbed?.load(),500)
+})
 </script>
 
 </body>
