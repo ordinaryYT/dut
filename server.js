@@ -28,29 +28,36 @@ const pool = new Pool({
 });
 
 (async () => {
-  await pool.query(`
-    CREATE TABLE IF NOT EXISTS warnings (
-      user_id TEXT PRIMARY KEY,
-      count INT DEFAULT 0
-    );
-    CREATE TABLE IF NOT EXISTS mod_apps (
-      id SERIAL PRIMARY KEY,
-      username TEXT,
-      user_id TEXT,
-      age TEXT,
-      timezone TEXT,
-      experience TEXT,
-      reason TEXT,
-      status TEXT DEFAULT 'Pending',
-      submitted_at TIMESTAMP DEFAULT NOW()
-    );
-    CREATE TABLE IF NOT EXISTS giveaways (
-      message_id TEXT PRIMARY KEY,
-      channel_id TEXT,
-      end_time BIGINT,
-      prize TEXT
-    );
-  `);
+  try {
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS warnings (
+        user_id TEXT PRIMARY KEY,
+        count INT DEFAULT 0
+      );
+      CREATE TABLE IF NOT EXISTS mod_apps (
+        id SERIAL PRIMARY KEY,
+        username TEXT,
+        user_id TEXT,
+        age TEXT,
+        timezone TEXT,
+        experience TEXT,
+        reason TEXT,
+        status TEXT DEFAULT 'Pending',
+        submitted_at TIMESTAMP DEFAULT NOW()
+      );
+      CREATE TABLE IF NOT EXISTS giveaways (
+        message_id TEXT PRIMARY KEY,
+        channel_id TEXT,
+        end_time BIGINT,           -- NULL when min_join > 0
+        prize TEXT,
+        winners INT DEFAULT 1,
+        min_join INT DEFAULT 0
+      );
+    `);
+    console.log('Database tables ready');
+  } catch (err) {
+    console.error('Database setup failed:', err);
+  }
 })();
 
 /* ================= DISCORD CLIENT ================= */
@@ -59,10 +66,10 @@ const client = new Client({
     GatewayIntentBits.Guilds,
     GatewayIntentBits.GuildMessages,
     GatewayIntentBits.MessageContent,
-    GatewayIntentBits.GuildMembers
+    GatewayIntentBits.GuildMembers,
+    GatewayIntentBits.GuildMessageReactions
   ]
 });
-
 client.ticketState = {};
 
 /* ================= AI HELPER ================= */
@@ -81,7 +88,7 @@ async function ai(prompt) {
     });
     if (!r.ok) return 'AI service unavailable.';
     const d = await r.json();
-    return d.choices?.[0]?.message?.content || 'Hello!';
+    return d.choices?.[0]?.message?.content?.trim() || 'How can I assist you today?';
   } catch (err) {
     console.error('AI error:', err);
     return 'AI is currently offline.';
@@ -99,68 +106,103 @@ function allowed(member) {
 
 /* ================= WARNING SYSTEM ================= */
 async function warn(member, rule) {
-  if (!member) return;
-  const r = await pool.query(
-    `INSERT INTO warnings(user_id, count)
-     VALUES($1, 1)
-     ON CONFLICT (user_id)
-     DO UPDATE SET count = warnings.count + 1
-     RETURNING count`,
-    [member.id]
-  );
-  const count = r.rows[0].count;
-
-  await member.send(`Rule broken: ${rule}`).catch(() => {});
-  const log = member.guild.channels.cache.get(process.env.STAFF_LOG_CHANNEL_ID);
-  log?.send(`${member} | ${rule} | Warning ${count}`);
-
-  if (count === 2) await member.timeout(60 * 60 * 1000).catch(() => {});
-  if (count === 3) await member.timeout(24 * 60 * 60 * 1000).catch(() => {});
-  if (count === 4) await member.roles.add(process.env.WEEK_BAN_ROLE_ID).catch(() => {});
-  if (count >= 5) {
-    await member.roles.add(process.env.WEEK_BAN_ROLE_ID).catch(() => {});
-    log?.send(`${member} has reached 5 warnings — review for permanent ban`);
+  if (!member || member.user.bot) return;
+  try {
+    const r = await pool.query(
+      `INSERT INTO warnings(user_id, count)
+       VALUES($1, 1)
+       ON CONFLICT (user_id)
+       DO UPDATE SET count = warnings.count + 1
+       RETURNING count`,
+      [member.id]
+    );
+    const count = r.rows[0].count;
+    await member.send(`**Rule broken:** ${rule}\nYou now have **${count}** warning(s).`).catch(() => {});
+    const log = member.guild.channels.cache.get(process.env.STAFF_LOG_CHANNEL_ID);
+    if (log) await log.send(`${member} — **${rule}** — Warning #${count}`);
+    if (count === 2) await member.timeout(60 * 60 * 1000, '2 warnings').catch(() => {});
+    if (count === 3) await member.timeout(24 * 60 * 60 * 1000, '3 warnings').catch(() => {});
+    if (count >= 4) {
+      await member.roles.add(process.env.WEEK_BAN_ROLE_ID).catch(() => {});
+      if (count >= 5 && log) {
+        await log.send(`**${member} reached 5 warnings — review for permanent ban**`);
+      }
+    }
+  } catch (err) {
+    console.error('Warning system error:', err);
   }
 }
 
-/* ================= AUTO-MOD + STICKY MESSAGES ================= */
-client.on('messageCreate', async message => {
-  if (message.author.bot) return;
+/* ================= GIVEAWAY HELPER ================= */
+async function getEntrantCount(message) {
+  const reaction = message.reactions.cache.get('🎉');
+  if (!reaction) return 0;
+  const users = await reaction.users.fetch();
+  return users.filter(u => !u.bot && !u.system).size;
+}
 
-  if (message.mentions.users.has(process.env.PING_FORBIDDEN_USER_ID)) {
-    await warn(message.member, 'Pinged forbidden user');
-    const dm = await ai(`You pinged a forbidden user in ${message.guild.name}. Please follow the rules.`);
-    await message.member.send(dm).catch(() => {});
-  }
+async function pickWinners(message, count = 1) {
+  const reaction = message.reactions.cache.get('🎉');
+  if (!reaction) return [];
 
-  const badWords = ['nsfw', 'porn', 'raid', 'ddos', 'dox'];
-  if (badWords.some(w => message.content.toLowerCase().includes(w))) {
-    await warn(message.member, 'Inappropriate content');
-  }
+  const users = await reaction.users.fetch();
+  const entrants = users.filter(u => !u.bot && !u.system).map(u => u);
 
-  if ([process.env.STICKY_CHANNEL1_ID, process.env.STICKY_CHANNEL2_ID].includes(message.channel.id)) {
-    const stickMsg = `__**Stickied Message:**__\n\n# Info\n\n**Absolutely no discussions here, use appropriate channels.**\n⚠️ Side chatting = <@&1466114901020519>`;
-    const msgs = await message.channel.messages.fetch({ limit: 10 });
-    msgs.filter(m => m.author.id === client.user.id && m.content.includes('Stickied Message'))
-      .forEach(m => m.delete().catch(() => {}));
-    await message.channel.send(stickMsg).catch(() => {});
-  }
+  if (entrants.length === 0) return [];
 
-  if (message.channel.id === process.env.STICKY_CHANNEL3_ID) {
-    const stickMsg = `__**Stickied Message:**__\n\n# Info\n\n⚠️ Use code **thebigdutz** in the Fortnite item shop.`;
-    const msgs = await message.channel.messages.fetch({ limit: 10 });
-    msgs.filter(m => m.author.id === client.user.id && m.content.includes('Stickied Message'))
-      .forEach(m => m.delete().catch(() => {}));
-    await message.channel.send(stickMsg).catch(() => {});
+  const shuffled = entrants.sort(() => 0.5 - Math.random());
+  return shuffled.slice(0, Math.min(count, entrants.length));
+}
+
+/* ================= AUTO-END WHEN MIN JOIN REACHED ================= */
+client.on('messageReactionAdd', async (reaction, user) => {
+  if (user.bot) return;
+  if (reaction.emoji.name !== '🎉') return;
+
+  const message = reaction.message;
+  if (!message.guild) return;
+
+  const { rows } = await pool.query(`SELECT * FROM giveaways WHERE message_id = $1`, [message.id]);
+  if (!rows.length) return;
+
+  const gw = rows[0];
+  if (gw.min_join <= 0) return; // only for min-join mode
+
+  const currentEntrants = await getEntrantCount(message);
+
+  if (currentEntrants >= gw.min_join) {
+    try {
+      const winnersList = await pickWinners(message, gw.winners);
+      const winnerText = winnersList.length
+        ? winnersList.map(u => u.toString()).join(', ')
+        : 'No one entered 😢';
+
+      const endEmbed = EmbedBuilder.from(message.embeds[0])
+        .setTitle('🎉 GIVEAWAY ENDED 🎉 — Minimum reached!')
+        .setDescription(`**Prize:** ${gw.prize}\n**Winners:** ${winnerText}\n**Entrants:** ${currentEntrants}`)
+        .setColor(0xff5555);
+
+      await message.edit({ embeds: [endEmbed] });
+
+      if (winnersList.length) {
+        await message.channel.send(`Congratulations ${winnerText}! You won **${gw.prize}**!`);
+      } else {
+        await message.channel.send('Giveaway ended — no entrants.');
+      }
+
+      await pool.query(`DELETE FROM giveaways WHERE message_id = $1`, [message.id]);
+    } catch (err) {
+      console.error('Min-join auto-end failed:', err);
+    }
   }
 });
 
-/* ================= TICKET + SLASH COMMANDS ================= */
+/* ================= INTERACTIONS ================= */
 client.on('interactionCreate', async interaction => {
   if (!interaction.isButton() && !interaction.isChatInputCommand()) return;
 
   try {
-    // Create ticket
+    // Ticket create
     if (interaction.isButton() && interaction.customId === 'create_ticket') {
       const guild = interaction.guild;
       const channel = await guild.channels.create({
@@ -173,76 +215,79 @@ client.on('interactionCreate', async interaction => {
           { id: client.user.id, allow: [PermissionsBitField.Flags.SendMessages] }
         ]
       });
-
-      client.ticketState[channel.id] = {
-        waitingForUser: true,
-        userId: interaction.user.id
-      };
-
-      const greet = await ai(`Hello ${interaction.user.username}, welcome to your ticket! How can I help?`);
+      client.ticketState[channel.id] = { waitingForUser: true, userId: interaction.user.id };
+      const greet = await ai(`Hello ${interaction.user.username}, welcome to your ticket! How can I help you today?`);
       await channel.send(greet);
-      await interaction.reply({ content: 'Ticket created!', ephemeral: true });
+      await interaction.reply({ content: 'Ticket created! → ' + channel, ephemeral: true });
+      return;
     }
 
     // Ticket buttons
     if (interaction.isButton()) {
       const channel = interaction.channel;
       const state = client.ticketState[channel?.id];
-      if (!state) return;
-
-      if (interaction.customId === 'continue') {
-        await channel.setParent(process.env.TICKET_OPEN_CATEGORY_ID);
-        await channel.permissionOverwrites.edit(state.userId, { SendMessages: true });
-        state.waitingForUser = true;
-        await interaction.deferUpdate();
+      if (state) {
+        if (interaction.customId === 'continue') {
+          await channel.setParent(process.env.TICKET_OPEN_CATEGORY_ID).catch(() => {});
+          await channel.permissionOverwrites.edit(state.userId, { SendMessages: true }).catch(() => {});
+          state.waitingForUser = true;
+          await interaction.deferUpdate();
+        }
+        if (interaction.customId === 'ping') {
+          await channel.send(`<@&${process.env.STAFF_ROLE_ID}> Need assistance!`).catch(() => {});
+          await interaction.deferUpdate();
+        }
+        if (interaction.customId === 'close') {
+          delete client.ticketState[channel.id];
+          await channel.delete().catch(() => {});
+        }
       }
-
-      if (interaction.customId === 'ping') {
-        await channel.send(`<@&${process.env.STAFF_ROLE_ID}>`);
-        await interaction.deferUpdate();
-      }
-
-      if (interaction.customId === 'close') {
-        delete client.ticketState[channel.id];
-        await channel.delete();
-      }
+      return;
     }
 
-    // Slash commands
+    // Staff application approve/deny
+    if (interaction.isButton() && (interaction.customId.startsWith('approve_') || interaction.customId.startsWith('deny_'))) {
+      if (!allowed(interaction.member)) return interaction.reply({ content: 'Only staff can use these buttons.', ephemeral: true });
+
+      const [action, appId] = interaction.customId.split('_');
+      const { rows } = await pool.query(`SELECT * FROM mod_apps WHERE id = $1`, [appId]);
+      if (!rows.length) return interaction.reply({ content: 'Application not found.', ephemeral: true });
+
+      const app = rows[0];
+      const embed = EmbedBuilder.from(interaction.message.embeds[0]);
+      embed.spliceFields(5, 1, { name: 'Status', value: action === 'approve' ? '✅ Approved' : '❌ Denied' });
+
+      if (action === 'approve') {
+        const guild = await client.guilds.fetch(process.env.GUILD_ID).catch(() => null);
+        if (guild) {
+          const member = await guild.members.fetch(app.user_id).catch(() => null);
+          if (member) await member.roles.add(process.env.STAFF_ROLE_ID).catch(() => {});
+        }
+      }
+
+      await pool.query(`UPDATE mod_apps SET status = $1 WHERE id = $2`, [
+        action === 'approve' ? 'Approved' : 'Denied',
+        appId
+      ]);
+
+      await interaction.update({ embeds: [embed], components: [] });
+      return;
+    }
+
+    // Slash commands (staff only)
     if (interaction.isChatInputCommand()) {
       if (!allowed(interaction.member)) {
         return interaction.reply({ content: 'You are not staff.', ephemeral: true });
       }
 
+      await interaction.deferReply({ ephemeral: true });
+
       const cmd = interaction.commandName;
-
-      if (cmd === 'rules') {
-        await interaction.reply({
-          content: '**Server Rules**\n\nBe respectful...\n\n5th Warning → Permanent Ban',
-          ephemeral: true
-        });
-      }
-
-      if (cmd === 'invitereward') {
-        const row = new ActionRowBuilder().addComponents(
-          new ButtonBuilder()
-            .setLabel('Join Group')
-            .setStyle(ButtonStyle.Link)
-            .setURL('https://www.roblox.com/share/g/46230128')
-        );
-        await interaction.reply({
-          content: 'Anyone you invite gets 10 robux...',
-          components: [row],
-          ephemeral: true
-        });
-      }
 
       if (cmd === 'ban') {
         const user = interaction.options.getUser('user');
-        if (!user) return interaction.reply({ content: 'User required', ephemeral: true });
-
         const member = await interaction.guild.members.fetch(user.id).catch(() => null);
-        if (!member) return interaction.reply({ content: 'User not in server', ephemeral: true });
+        if (!member) return interaction.editReply('User not found in server.');
 
         await pool.query(
           `INSERT INTO warnings(user_id, count) VALUES($1, 5)
@@ -252,20 +297,122 @@ client.on('interactionCreate', async interaction => {
 
         await member.roles.add(process.env.WEEK_BAN_ROLE_ID).catch(() => {});
         const log = interaction.guild.channels.cache.get(process.env.STAFF_LOG_CHANNEL_ID);
-        log?.send(`${member} reached 5 warnings — review for perm ban`);
+        if (log) await log.send(`${member} reached 5 warnings — review for permanent ban`);
 
-        await interaction.reply({ content: `✅ ${member} flagged for permanent ban review.`, ephemeral: true });
+        await interaction.editReply(`✅ ${member} flagged for permanent ban review (warnings set to 5).`);
       }
 
-      if (cmd === 'unban') {
+      else if (cmd === 'unban') {
         const user = interaction.options.getUser('user');
-        if (!user) return interaction.reply({ content: 'User required', ephemeral: true });
-
         const member = await interaction.guild.members.fetch(user.id).catch(() => null);
-        if (!member) return interaction.reply({ content: 'User not in server', ephemeral: true });
+        if (!member) return interaction.editReply('User not found in server.');
 
         await member.roles.remove(process.env.WEEK_BAN_ROLE_ID).catch(() => {});
-        await interaction.reply({ content: `✅ Removed ban review role from ${member}.`, ephemeral: true });
+        await interaction.editReply(`✅ Removed ban review role from ${member}. Warnings unchanged.`);
+      }
+
+      else if (cmd === 'revoke') {
+        const user = interaction.options.getUser('user');
+        const amount = interaction.options.getInteger('amount') ?? 1;
+
+        if (amount < 1) return interaction.editReply('Amount must be at least 1.');
+
+        const member = await interaction.guild.members.fetch(user.id).catch(() => null);
+        if (!member) return interaction.editReply('User not found in server.');
+
+        const res = await pool.query(
+          `UPDATE warnings SET count = GREATEST(count - $1, 0) WHERE user_id = $2 RETURNING count`,
+          [amount, member.id]
+        );
+
+        const newCount = res.rows[0] ? res.rows[0].count : 0;
+
+        const log = interaction.guild.channels.cache.get(process.env.STAFF_LOG_CHANNEL_ID);
+        if (log) await log.send(`${interaction.user} removed **${amount}** warning(s) from ${member} → now at ${newCount}`);
+
+        await interaction.editReply(`✅ Removed **${amount}** warning(s) from ${member}. New total: **${newCount}**`);
+      }
+
+      else if (cmd === 'giveaway') {
+        const sub = interaction.options.getSubcommand();
+
+        if (sub === 'start') {
+          const prize = interaction.options.getString('prize', true);
+          const winners = interaction.options.getInteger('winners') ?? 1;
+          const minJoin = interaction.options.getInteger('min_join') ?? 0;
+
+          if (winners < 1 || winners > 10) {
+            return interaction.editReply('Number of winners must be 1–10.');
+          }
+          if (minJoin < 0 || minJoin > 1000) {
+            return interaction.editReply('Minimum join requirement must be 0–1000.');
+          }
+
+          let description = `**Prize:** ${prize}\n**Winners:** ${winners}\n\n**React with 🎉 to enter!**\nGood luck everyone!`;
+
+          let endTime = null;
+          if (minJoin === 0) {
+            const duration = interaction.options.getInteger('duration', true);
+            if (!duration || duration < 1 || duration > 10080) {
+              return interaction.editReply('When min_join is 0, duration is required (1–10080 minutes).');
+            }
+            endTime = Date.now() + duration * 60 * 1000;
+            description += `\n**Ends:** <t:${Math.floor(endTime/1000)}:R> (<t:${Math.floor(endTime/1000)}:f>)`;
+          } else {
+            description += `\n**Ends when ${minJoin} people join** (no fixed timer)`;
+          }
+
+          const embed = new EmbedBuilder()
+            .setTitle('🎉 GIVEAWAY 🎉')
+            .setDescription(description)
+            .setColor(0x00ff88)
+            .setFooter({ text: `Hosted by ${interaction.user.tag}` });
+
+          const msg = await interaction.channel.send({ embeds: [embed] });
+          await msg.react('🎉').catch(console.error);
+
+          await pool.query(
+            `INSERT INTO giveaways (message_id, channel_id, end_time, prize, winners, min_join)
+             VALUES ($1, $2, $3, $4, $5, $6)`,
+            [msg.id, interaction.channel.id, endTime, prize, winners, minJoin]
+          );
+
+          await interaction.editReply(`Giveaway started → ${msg.url}`);
+        }
+
+        else if (sub === 'end') {
+          const msgId = interaction.options.getString('message_id', true);
+
+          const { rows } = await pool.query(`SELECT * FROM giveaways WHERE message_id = $1`, [msgId]);
+          if (!rows.length) return interaction.editReply('No active giveaway with that message ID.');
+
+          const gw = rows[0];
+          const ch = await client.channels.fetch(gw.channel_id).catch(() => null);
+          if (!ch) return interaction.editReply('Channel not found.');
+
+          const msg = await ch.messages.fetch(msgId).catch(() => null);
+          if (!msg) return interaction.editReply('Giveaway message not found.');
+
+          const entrants = await getEntrantCount(msg);
+          const winnersList = await pickWinners(msg, gw.winners);
+          const winnerText = winnersList.length ? winnersList.map(u => u.toString()).join(', ') : 'No one entered 😢';
+
+          const endEmbed = EmbedBuilder.from(msg.embeds[0])
+            .setTitle('🎉 GIVEAWAY FORCE ENDED 🎉')
+            .setDescription(`**Prize:** ${gw.prize}\n**Winners:** ${winnerText}\n**Entrants:** ${entrants}`)
+            .setColor(0xff5555);
+
+          await msg.edit({ embeds: [endEmbed] });
+
+          if (winnersList.length) {
+            await ch.send(`Congratulations ${winnerText}! You won **${gw.prize}** (force ended)!`);
+          } else {
+            await ch.send(`Giveaway force ended — no winners.`);
+          }
+
+          await pool.query(`DELETE FROM giveaways WHERE message_id = $1`, [msgId]);
+          await interaction.editReply('Giveaway ended early.');
+        }
       }
     }
   } catch (err) {
@@ -280,14 +427,12 @@ client.on('interactionCreate', async interaction => {
 client.on('guildMemberAdd', async member => {
   const channel = member.guild.channels.cache.get(process.env.WELCOME_CHANNEL_ID);
   if (!channel) return;
-  const msg = await ai(`Welcome ${member.user.username} to Dutz Dungeon!`);
-  channel.send(msg).catch(() => {});
+  const msg = await ai(`Welcome ${member.user.username} to Dutz Dungeon! Short & fun welcome message.`);
+  await channel.send(msg).catch(() => {});
 });
 
 /* ================= WEBSITE ROUTES ================= */
-app.get('/', (req, res) => {
-  res.sendFile(__dirname + '/index.html');
-});
+app.get('/', (req, res) => res.sendFile(__dirname + '/index.html'));
 
 app.get('/clips', (req, res) => {
   res.json({
@@ -296,39 +441,22 @@ app.get('/clips', (req, res) => {
   });
 });
 
-/* ================= DISCORD OAUTH (using separate auth-only app) ================= */
 const sessions = new Map();
 
 app.get('/auth/discord', (req, res) => {
   if (!process.env.CLIENT_ID_AUTH || !process.env.CLIENT_SECRET_AUTH) {
-    console.error('[AUTH] Missing CLIENT_ID_AUTH or CLIENT_SECRET_AUTH env vars');
-    return res.status(500).send('Server configuration error – contact admin');
+    return res.status(500).send('Missing Discord OAuth credentials.');
   }
-
-  const authorizeUrl = `https://discord.com/oauth2/authorize?` +
-    `client_id=${process.env.CLIENT_ID_AUTH}` +
-    `&redirect_uri=${encodeURIComponent(process.env.REDIRECT_URI)}` +
-    `&response_type=code&scope=identify`;
-
-  console.log('[AUTH] Redirecting to Discord → client_id:', process.env.CLIENT_ID_AUTH);
-  res.redirect(authorizeUrl);
+  const url = `https://discord.com/oauth2/authorize?client_id=${process.env.CLIENT_ID_AUTH}&redirect_uri=${encodeURIComponent(process.env.REDIRECT_URI)}&response_type=code&scope=identify`;
+  res.redirect(url);
 });
 
 app.get('/auth/callback', async (req, res) => {
   try {
-    if (!req.query.code) {
-      console.log('[AUTH] No code parameter received');
-      return res.status(400).send('No authorization code received from Discord');
-    }
-
-    console.log('[AUTH] Callback hit | code prefix:', req.query.code.substring(0, 12) + '...');
-    console.log('[AUTH] Using client_id:', process.env.CLIENT_ID_AUTH);
-
-    const tokenResponse = await fetch('https://discord.com/api/oauth2/token', {
+    if (!req.query.code) return res.status(400).send('No code received.');
+    const tokenRes = await fetch('https://discord.com/api/oauth2/token', {
       method: 'POST',
-      headers: {
-        'Content-Type': 'application/x-www-form-urlencoded'
-      },
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
       body: new URLSearchParams({
         client_id: process.env.CLIENT_ID_AUTH,
         client_secret: process.env.CLIENT_SECRET_AUTH,
@@ -337,108 +465,52 @@ app.get('/auth/callback', async (req, res) => {
         redirect_uri: process.env.REDIRECT_URI
       })
     });
-
-    console.log('[AUTH] Discord token endpoint responded with status:', tokenResponse.status);
-
-    if (!tokenResponse.ok) {
-      const errorBody = await tokenResponse.text();
-      console.error('[AUTH] Discord error:', tokenResponse.status, errorBody.substring(0, 600));
-
-      if (tokenResponse.status === 429) {
-        return res.status(429).send(`
-          <h1>Rate Limited by Discord</h1>
-          <p>Too many login attempts from this server right now (common on shared hosting like Render).<br>
-          Please wait 1–24 hours and try again. You can refresh this page later.</p>
-        `);
-      }
-
-      return res.status(500).send(`Discord login failed (error ${tokenResponse.status}). Please try again later.`);
-    }
-
-    const tokenData = await tokenResponse.json();
-
-    const userResponse = await fetch('https://discord.com/api/users/@me', {
-      headers: {
-        Authorization: `Bearer ${tokenData.access_token}`
-      }
+    if (!tokenRes.ok) throw new Error('Token fetch failed');
+    const tokenData = await tokenRes.json();
+    const userRes = await fetch('https://discord.com/api/users/@me', {
+      headers: { Authorization: `Bearer ${tokenData.access_token}` }
     });
-
-    if (!userResponse.ok) {
-      console.error('[AUTH] User info fetch failed:', userResponse.status);
-      throw new Error('Failed to get user information');
-    }
-
-    const user = await userResponse.json();
-
+    const user = await userRes.json();
     sessions.set(user.id, user);
-    console.log('[AUTH] Login successful for user:', user.id, user.username);
-
     res.redirect(`/?uid=${user.id}`);
-  } catch (error) {
-    console.error('[AUTH] OAuth callback crashed:', error.message, error.stack?.substring(0, 300));
-    res.status(500).send('Something went wrong during login. Please try again or contact support.');
+  } catch (err) {
+    console.error('OAuth error:', err);
+    res.status(500).send('Login error.');
   }
 });
 
-/* ================= STAFF APPLICATION ================= */
 app.post('/apply', async (req, res) => {
   const { uid, age, timezone, experience, reason } = req.body;
   const user = sessions.get(uid);
   if (!user) return res.sendStatus(401);
-
-  const r = await pool.query(
-    `INSERT INTO mod_apps(username, user_id, age, timezone, experience, reason)
-     VALUES($1, $2, $3, $4, $5, $6) RETURNING id`,
-    [user.username, user.id, age, timezone, experience, reason]
-  );
-
-  const embed = new EmbedBuilder()
-    .setTitle('📋 Staff Application')
-    .setColor(0x5865F2)
-    .addFields(
-      { name: 'User', value: `${user.username} (${user.id})` },
-      { name: 'Age', value: age || 'Not provided', inline: true },
-      { name: 'Timezone', value: timezone || 'Not provided', inline: true },
-      { name: 'Experience', value: experience || 'None' },
-      { name: 'Reason', value: reason || 'No reason given' },
-      { name: 'Status', value: '⏳ Pending' }
+  try {
+    const r = await pool.query(
+      `INSERT INTO mod_apps(username, user_id, age, timezone, experience, reason)
+       VALUES($1, $2, $3, $4, $5, $6) RETURNING id`,
+      [user.username, user.id, age, timezone, experience, reason]
     );
-
-  const row = new ActionRowBuilder().addComponents(
-    new ButtonBuilder().setCustomId(`approve_${r.rows[0].id}`).setLabel('Approve').setStyle(ButtonStyle.Success),
-    new ButtonBuilder().setCustomId(`deny_${r.rows[0].id}`).setLabel('Deny').setStyle(ButtonStyle.Danger)
-  );
-
-  const channel = await client.channels.fetch(process.env.STAFF_APPS_CHANNEL_ID).catch(() => null);
-  if (channel) await channel.send({ embeds: [embed], components: [row] });
-
-  res.sendStatus(200);
-});
-
-/* ================= APPROVE/DENY BUTTONS ================= */
-client.on('interactionCreate', async interaction => {
-  if (!interaction.isButton()) return;
-  if (!interaction.customId.startsWith('approve_') && !interaction.customId.startsWith('deny_')) return;
-
-  const [action, id] = interaction.customId.split('_');
-  const { rows } = await pool.query(`SELECT * FROM mod_apps WHERE id = $1`, [id]);
-  if (!rows.length) return;
-
-  const app = rows[0];
-  const embed = EmbedBuilder.from(interaction.message.embeds[0]);
-  embed.spliceFields(5, 1, { name: 'Status', value: action === 'approve' ? '✅ Approved' : '❌ Denied' });
-
-  if (action === 'approve') {
-    const guild = await client.guilds.fetch(process.env.GUILD_ID).catch(() => null);
-    if (guild) {
-      const member = await guild.members.fetch(app.user_id).catch(() => null);
-      if (member) await member.roles.add(process.env.STAFF_ROLE_ID).catch(() => {});
-    }
+    const embed = new EmbedBuilder()
+      .setTitle('📋 Staff Application')
+      .setColor(0x5865F2)
+      .addFields(
+        { name: 'User', value: `${user.username} (${user.id})` },
+        { name: 'Age', value: age || '—', inline: true },
+        { name: 'Timezone', value: timezone || '—', inline: true },
+        { name: 'Experience', value: experience || 'None' },
+        { name: 'Reason', value: reason || 'No reason provided' },
+        { name: 'Status', value: '⏳ Pending' }
+      );
+    const row = new ActionRowBuilder().addComponents(
+      new ButtonBuilder().setCustomId(`approve_${r.rows[0].id}`).setLabel('Approve').setStyle(ButtonStyle.Success),
+      new ButtonBuilder().setCustomId(`deny_${r.rows[0].id}`).setLabel('Deny').setStyle(ButtonStyle.Danger)
+    );
+    const channel = await client.channels.fetch(process.env.STAFF_APPS_CHANNEL_ID).catch(() => null);
+    if (channel) await channel.send({ embeds: [embed], components: [row] });
+    res.sendStatus(200);
+  } catch (err) {
+    console.error('Apply error:', err);
+    res.sendStatus(500);
   }
-
-  await pool.query(`UPDATE mod_apps SET status = $1 WHERE id = $2`, [action === 'approve' ? 'Approved' : 'Denied', id]);
-
-  await interaction.update({ embeds: [embed], components: [] });
 });
 
 /* ================= REGISTER SLASH COMMANDS ================= */
@@ -446,33 +518,51 @@ client.once('ready', async () => {
   console.log(`Logged in as ${client.user.tag}`);
 
   const commands = [
-    new SlashCommandBuilder().setName('rules').setDescription('View server rules'),
-    new SlashCommandBuilder().setName('invitereward').setDescription('Show invite reward info'),
     new SlashCommandBuilder()
       .setName('ban')
-      .setDescription('Mark user for perm ban review (sets 5 warnings)')
+      .setDescription('Flag user for permanent ban review (sets 5 warnings + role)')
       .addUserOption(opt => opt.setName('user').setDescription('The user').setRequired(true)),
     new SlashCommandBuilder()
       .setName('unban')
-      .setDescription('Remove perm ban review role')
+      .setDescription('Remove ban review role (warnings unchanged)')
+      .addUserOption(opt => opt.setName('user').setDescription('The user').setRequired(true)),
+    new SlashCommandBuilder()
+      .setName('revoke')
+      .setDescription('Remove a specified number of warnings from a user')
       .addUserOption(opt => opt.setName('user').setDescription('The user').setRequired(true))
+      .addIntegerOption(opt => opt.setName('amount').setDescription('Number of warnings to remove (default: 1)').setRequired(false).setMinValue(1)),
+    new SlashCommandBuilder()
+      .setName('giveaway')
+      .setDescription('Manage giveaways')
+      .addSubcommand(sub =>
+        sub.setName('start')
+           .setDescription('Start a new giveaway')
+           .addStringOption(opt => opt.setName('prize').setDescription('What is being given away').setRequired(true))
+           .addIntegerOption(opt => opt.setName('winners').setDescription('Number of winners (default: 1)').setRequired(false).setMinValue(1).setMaxValue(10))
+           .addIntegerOption(opt => opt.setName('min_join').setDescription('Required number of entrants to end giveaway (default: 0 = timed)').setRequired(false).setMinValue(0))
+           .addIntegerOption(opt => opt.setName('duration').setDescription('Duration in minutes if min_join = 0').setRequired(false).setMinValue(1).setMaxValue(10080))
+      )
+      .addSubcommand(sub =>
+        sub.setName('end')
+           .setDescription('Force end a giveaway early')
+           .addStringOption(opt => opt.setName('message_id').setDescription('Message ID of the giveaway embed').setRequired(true))
+      )
   ].map(c => c.toJSON());
 
   const rest = new REST({ version: '10' }).setToken(process.env.DISCORD_TOKEN);
 
   try {
     await rest.put(Routes.applicationGuildCommands(client.user.id, process.env.GUILD_ID), { body: commands });
-    console.log('Slash commands registered successfully');
+    console.log('Slash commands registered: /ban, /unban, /revoke, /giveaway');
   } catch (err) {
     console.error('Failed to register commands:', err);
   }
 });
 
 /* ================= START ================= */
-client.login(process.env.DISCORD_TOKEN).catch(err => {
-  console.error('Discord login failed:', err);
-});
+client.login(process.env.DISCORD_TOKEN).catch(err => console.error('Discord login failed:', err));
 
-app.listen(process.env.PORT || 3000, '0.0.0.0', () => {
-  console.log(`Server running on port ${process.env.PORT || 3000}`);
+const PORT = process.env.PORT || 3000;
+app.listen(PORT, '0.0.0.0', () => {
+  console.log(`Server running on port ${PORT}`);
 });
