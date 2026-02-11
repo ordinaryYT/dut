@@ -20,7 +20,7 @@ const { Pool } = require('pg');
 const app = express();
 app.use(express.urlencoded({ extended: true }));
 app.use(express.json());
-app.use(cookieParser('this-is-a-hardcoded-secret-change-it-later-69420xyz')); // hardcoded as requested
+app.use(cookieParser('hardcoded-secret-please-change-this-to-something-secure-69420abcxyz')); // hardcoded as requested
 app.use(express.static(__dirname));
 
 /* ================= DATABASE ================= */
@@ -57,6 +57,7 @@ const pool = new Pool({
       );
     `);
 
+    // Auto-add missing columns if needed
     await pool.query(`
       ALTER TABLE giveaways ADD COLUMN IF NOT EXISTS winners INT DEFAULT 1;
       ALTER TABLE giveaways ADD COLUMN IF NOT EXISTS min_join INT DEFAULT 0;
@@ -210,6 +211,7 @@ client.on('interactionCreate', async interaction => {
   if (!interaction.isButton() && !interaction.isChatInputCommand()) return;
 
   try {
+    // Ticket create
     if (interaction.isButton() && interaction.customId === 'create_ticket') {
       const guild = interaction.guild;
       const channel = await guild.channels.create({
@@ -229,6 +231,7 @@ client.on('interactionCreate', async interaction => {
       return;
     }
 
+    // Ticket buttons
     if (interaction.isButton()) {
       const channel = interaction.channel;
       const state = client.ticketState[channel?.id];
@@ -251,6 +254,7 @@ client.on('interactionCreate', async interaction => {
       return;
     }
 
+    // Staff application approve/deny
     if (interaction.isButton() && (interaction.customId.startsWith('approve_') || interaction.customId.startsWith('deny_'))) {
       if (!allowed(interaction.member)) return interaction.reply({ content: 'Only staff can use these buttons.', flags: 64 });
 
@@ -279,6 +283,7 @@ client.on('interactionCreate', async interaction => {
       return;
     }
 
+    // Slash commands
     if (interaction.isChatInputCommand()) {
       if (!allowed(interaction.member)) {
         return interaction.reply({ content: 'You are not staff.', flags: 64 });
