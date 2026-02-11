@@ -13,14 +13,14 @@ const {
 } = require('discord.js');
 
 const express = require('express');
-const cookieParser = require('cookie-parser'); // ← added
+const cookieParser = require('cookie-parser');
 const fetch = (...args) => import('node-fetch').then(({ default: fetch }) => fetch(...args));
 const { Pool } = require('pg');
 
 const app = express();
 app.use(express.urlencoded({ extended: true }));
 app.use(express.json());
-app.use(cookieParser('your-secret-key-here-change-this')); // ← add a strong secret (or use env var)
+app.use(cookieParser('this-is-a-hardcoded-secret-change-it-later-69420xyz')); // hardcoded as requested
 app.use(express.static(__dirname));
 
 /* ================= DATABASE ================= */
@@ -57,7 +57,6 @@ const pool = new Pool({
       );
     `);
 
-    // Auto-add missing columns
     await pool.query(`
       ALTER TABLE giveaways ADD COLUMN IF NOT EXISTS winners INT DEFAULT 1;
       ALTER TABLE giveaways ADD COLUMN IF NOT EXISTS min_join INT DEFAULT 0;
@@ -457,7 +456,7 @@ const sessions = new Map();
 
 app.get('/auth/discord', (req, res) => {
   if (!process.env.CLIENT_ID_AUTH || !process.env.CLIENT_SECRET_AUTH) {
-    console.error('Missing CLIENT_ID_AUTH or CLIENT_SECRET_AUTH env vars');
+    console.error('Missing CLIENT_ID_AUTH or CLIENT_SECRET_AUTH');
     return res.status(500).send('Missing Discord OAuth credentials.');
   }
 
@@ -471,6 +470,8 @@ app.get('/auth/callback', async (req, res) => {
       console.log('Callback missing code');
       return res.status(400).send('No code received.');
     }
+
+    console.log('Fetching token...');
 
     const tokenRes = await fetch('https://discord.com/api/oauth2/token', {
       method: 'POST',
@@ -503,20 +504,20 @@ app.get('/auth/callback', async (req, res) => {
     }
 
     const user = await userRes.json();
-    console.log('OAuth success - user:', user.id, user.username);
+    console.log('OAuth success - user ID:', user.id);
 
     sessions.set(user.id, user);
     res.cookie('auth_uid', user.id, {
       httpOnly: true,
-      secure: true, // must be true on https
+      secure: true,
       sameSite: 'strict',
-      maxAge: 24 * 60 * 60 * 1000 // 1 day
+      maxAge: 24 * 60 * 60 * 1000
     });
 
     res.redirect(`/?uid=${user.id}`);
   } catch (err) {
     console.error('OAuth callback error:', err);
-    res.status(500).send('Login error. Please try again.');
+    res.status(500).send('Login error. Please try again or contact support.');
   }
 });
 
@@ -525,7 +526,9 @@ app.post('/apply', async (req, res) => {
     const uidFromForm = req.body.uid;
     const uidFromCookie = req.cookies.auth_uid;
 
-    console.log('Apply POST - Form uid:', uidFromForm, 'Cookie uid:', uidFromCookie);
+    console.log('[/apply] Request received');
+    console.log('Form uid:', uidFromForm);
+    console.log('Cookie uid:', uidFromCookie);
 
     if (!uidFromCookie || uidFromForm !== uidFromCookie) {
       console.log('Session mismatch or expired');
@@ -534,11 +537,11 @@ app.post('/apply', async (req, res) => {
 
     const user = sessions.get(uidFromCookie);
     if (!user) {
-      console.log('No user found in session for uid:', uidFromCookie);
+      console.log('No user in session for uid:', uidFromCookie);
       return res.status(401).send('Session expired. Please log in again.');
     }
 
-    console.log('User found:', user.username);
+    console.log('User authenticated:', user.username, user.id);
 
     const { age, timezone, experience, reason } = req.body;
 
@@ -565,13 +568,22 @@ app.post('/apply', async (req, res) => {
       new ButtonBuilder().setCustomId(`deny_${r.rows[0].id}`).setLabel('Deny').setStyle(ButtonStyle.Danger)
     );
 
-    const channel = await client.channels.fetch(process.env.STAFF_APPS_CHANNEL_ID).catch(() => null);
-    if (channel) await channel.send({ embeds: [embed], components: [row] });
+    const channel = await client.channels.fetch(process.env.STAFF_APPS_CHANNEL_ID).catch(err => {
+      console.error('Failed to fetch staff apps channel:', err);
+      return null;
+    });
+
+    if (channel) {
+      await channel.send({ embeds: [embed], components: [row] });
+      console.log('Application submitted to channel');
+    } else {
+      console.warn('Staff apps channel not found');
+    }
 
     res.sendStatus(200);
   } catch (err) {
     console.error('Apply error:', err);
-    res.sendStatus(500);
+    res.status(500).send('Server error during submission.');
   }
 });
 
