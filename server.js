@@ -49,14 +49,20 @@ const pool = new Pool({
         message_id TEXT PRIMARY KEY,
         channel_id TEXT,
         end_time BIGINT,
-        prize TEXT,
-        winners INT DEFAULT 1,
-        min_join INT DEFAULT 0
+        prize TEXT
       );
     `);
-    console.log('Database tables ready');
+
+    // Auto-migrate missing columns
+    await pool.query(`
+      ALTER TABLE giveaways ADD COLUMN IF NOT EXISTS winners INT DEFAULT 1;
+      ALTER TABLE giveaways ADD COLUMN IF NOT EXISTS min_join INT DEFAULT 0;
+      ALTER TABLE giveaways ADD COLUMN IF NOT EXISTS extension_count INT DEFAULT 0;
+    `);
+
+    console.log('Database tables and columns ready');
   } catch (err) {
-    console.error('Database setup failed:', err);
+    console.error('Database migration failed:', err);
   }
 })();
 
@@ -202,7 +208,6 @@ client.on('interactionCreate', async interaction => {
   if (!interaction.isButton() && !interaction.isChatInputCommand()) return;
 
   try {
-    // Ticket create
     if (interaction.isButton() && interaction.customId === 'create_ticket') {
       const guild = interaction.guild;
       const channel = await guild.channels.create({
@@ -222,7 +227,6 @@ client.on('interactionCreate', async interaction => {
       return;
     }
 
-    // Ticket buttons
     if (interaction.isButton()) {
       const channel = interaction.channel;
       const state = client.ticketState[channel?.id];
@@ -245,7 +249,6 @@ client.on('interactionCreate', async interaction => {
       return;
     }
 
-    // Staff application approve/deny
     if (interaction.isButton() && (interaction.customId.startsWith('approve_') || interaction.customId.startsWith('deny_'))) {
       if (!allowed(interaction.member)) return interaction.reply({ content: 'Only staff can use these buttons.', flags: 64 });
 
@@ -274,7 +277,6 @@ client.on('interactionCreate', async interaction => {
       return;
     }
 
-    // Slash commands
     if (interaction.isChatInputCommand()) {
       if (!allowed(interaction.member)) {
         return interaction.reply({ content: 'You are not staff.', flags: 64 });
@@ -559,9 +561,8 @@ client.once('ready', async () => {
   const rest = new REST({ version: '10' }).setToken(process.env.DISCORD_TOKEN);
 
   try {
-    // Make sure GUILD_ID is defined!
     if (!process.env.GUILD_ID) {
-      console.error('ERROR: GUILD_ID is not set in environment variables! Cannot register guild commands.');
+      console.error('ERROR: GUILD_ID is not set! Add it to env vars.');
       return;
     }
 
