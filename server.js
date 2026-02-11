@@ -13,12 +13,14 @@ const {
 } = require('discord.js');
 
 const express = require('express');
+const cookieParser = require('cookie-parser'); // ← added
 const fetch = (...args) => import('node-fetch').then(({ default: fetch }) => fetch(...args));
 const { Pool } = require('pg');
 
 const app = express();
 app.use(express.urlencoded({ extended: true }));
 app.use(express.json());
+app.use(cookieParser('your-secret-key-here-change-this')); // ← add a strong secret (or use env var)
 app.use(express.static(__dirname));
 
 /* ================= DATABASE ================= */
@@ -49,15 +51,16 @@ const pool = new Pool({
         message_id TEXT PRIMARY KEY,
         channel_id TEXT,
         end_time BIGINT,
-        prize TEXT
+        prize TEXT,
+        winners INT DEFAULT 1,
+        min_join INT DEFAULT 0
       );
     `);
 
-    // Auto-migrate missing columns
+    // Auto-add missing columns
     await pool.query(`
       ALTER TABLE giveaways ADD COLUMN IF NOT EXISTS winners INT DEFAULT 1;
       ALTER TABLE giveaways ADD COLUMN IF NOT EXISTS min_join INT DEFAULT 0;
-      ALTER TABLE giveaways ADD COLUMN IF NOT EXISTS extension_count INT DEFAULT 0;
     `);
 
     console.log('Database tables and columns ready');
@@ -454,15 +457,21 @@ const sessions = new Map();
 
 app.get('/auth/discord', (req, res) => {
   if (!process.env.CLIENT_ID_AUTH || !process.env.CLIENT_SECRET_AUTH) {
+    console.error('Missing CLIENT_ID_AUTH or CLIENT_SECRET_AUTH env vars');
     return res.status(500).send('Missing Discord OAuth credentials.');
   }
+
   const url = `https://discord.com/oauth2/authorize?client_id=${process.env.CLIENT_ID_AUTH}&redirect_uri=${encodeURIComponent(process.env.REDIRECT_URI)}&response_type=code&scope=identify`;
   res.redirect(url);
 });
 
 app.get('/auth/callback', async (req, res) => {
   try {
-    if (!req.query.code) return res.status(400).send('No code received.');
+    if (!req.query.code) {
+      console.log('Callback missing code');
+      return res.status(400).send('No code received.');
+    }
+
     const tokenRes = await fetch('https://discord.com/api/oauth2/token', {
       method: 'POST',
       headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
@@ -474,30 +483,71 @@ app.get('/auth/callback', async (req, res) => {
         redirect_uri: process.env.REDIRECT_URI
       })
     });
-    if (!tokenRes.ok) throw new Error('Token fetch failed');
+
+    if (!tokenRes.ok) {
+      const errText = await tokenRes.text();
+      console.error('Token fetch failed:', tokenRes.status, errText);
+      throw new Error(`Token fetch failed: ${tokenRes.status} - ${errText}`);
+    }
+
     const tokenData = await tokenRes.json();
+
     const userRes = await fetch('https://discord.com/api/users/@me', {
       headers: { Authorization: `Bearer ${tokenData.access_token}` }
     });
+
+    if (!userRes.ok) {
+      const errText = await userRes.text();
+      console.error('User fetch failed:', userRes.status, errText);
+      throw new Error('User fetch failed');
+    }
+
     const user = await userRes.json();
+    console.log('OAuth success - user:', user.id, user.username);
+
     sessions.set(user.id, user);
+    res.cookie('auth_uid', user.id, {
+      httpOnly: true,
+      secure: true, // must be true on https
+      sameSite: 'strict',
+      maxAge: 24 * 60 * 60 * 1000 // 1 day
+    });
+
     res.redirect(`/?uid=${user.id}`);
   } catch (err) {
-    console.error('OAuth error:', err);
-    res.status(500).send('Login error.');
+    console.error('OAuth callback error:', err);
+    res.status(500).send('Login error. Please try again.');
   }
 });
 
 app.post('/apply', async (req, res) => {
-  const { uid, age, timezone, experience, reason } = req.body;
-  const user = sessions.get(uid);
-  if (!user) return res.sendStatus(401);
   try {
+    const uidFromForm = req.body.uid;
+    const uidFromCookie = req.cookies.auth_uid;
+
+    console.log('Apply POST - Form uid:', uidFromForm, 'Cookie uid:', uidFromCookie);
+
+    if (!uidFromCookie || uidFromForm !== uidFromCookie) {
+      console.log('Session mismatch or expired');
+      return res.status(401).send('Session expired or invalid. Please log in again.');
+    }
+
+    const user = sessions.get(uidFromCookie);
+    if (!user) {
+      console.log('No user found in session for uid:', uidFromCookie);
+      return res.status(401).send('Session expired. Please log in again.');
+    }
+
+    console.log('User found:', user.username);
+
+    const { age, timezone, experience, reason } = req.body;
+
     const r = await pool.query(
       `INSERT INTO mod_apps(username, user_id, age, timezone, experience, reason)
        VALUES($1, $2, $3, $4, $5, $6) RETURNING id`,
       [user.username, user.id, age, timezone, experience, reason]
     );
+
     const embed = new EmbedBuilder()
       .setTitle('📋 Staff Application')
       .setColor(0x5865F2)
@@ -509,12 +559,15 @@ app.post('/apply', async (req, res) => {
         { name: 'Reason', value: reason || 'No reason provided' },
         { name: 'Status', value: '⏳ Pending' }
       );
+
     const row = new ActionRowBuilder().addComponents(
       new ButtonBuilder().setCustomId(`approve_${r.rows[0].id}`).setLabel('Approve').setStyle(ButtonStyle.Success),
       new ButtonBuilder().setCustomId(`deny_${r.rows[0].id}`).setLabel('Deny').setStyle(ButtonStyle.Danger)
     );
+
     const channel = await client.channels.fetch(process.env.STAFF_APPS_CHANNEL_ID).catch(() => null);
     if (channel) await channel.send({ embeds: [embed], components: [row] });
+
     res.sendStatus(200);
   } catch (err) {
     console.error('Apply error:', err);
@@ -562,7 +615,7 @@ client.once('ready', async () => {
 
   try {
     if (!process.env.GUILD_ID) {
-      console.error('ERROR: GUILD_ID is not set! Add it to env vars.');
+      console.error('ERROR: GUILD_ID is not set!');
       return;
     }
 
