@@ -48,7 +48,7 @@ const pool = new Pool({
       CREATE TABLE IF NOT EXISTS giveaways (
         message_id TEXT PRIMARY KEY,
         channel_id TEXT,
-        end_time BIGINT,           -- NULL when min_join > 0
+        end_time BIGINT,
         prize TEXT,
         winners INT DEFAULT 1,
         min_join INT DEFAULT 0
@@ -133,7 +133,7 @@ async function warn(member, rule) {
   }
 }
 
-/* ================= GIVEAWAY HELPER ================= */
+/* ================= GIVEAWAY HELPERS ================= */
 async function getEntrantCount(message) {
   const reaction = message.reactions.cache.get('🎉');
   if (!reaction) return 0;
@@ -154,7 +154,7 @@ async function pickWinners(message, count = 1) {
   return shuffled.slice(0, Math.min(count, entrants.length));
 }
 
-/* ================= AUTO-END WHEN MIN JOIN REACHED ================= */
+/* ================= AUTO-END ON MIN JOIN ================= */
 client.on('messageReactionAdd', async (reaction, user) => {
   if (user.bot) return;
   if (reaction.emoji.name !== '🎉') return;
@@ -166,7 +166,7 @@ client.on('messageReactionAdd', async (reaction, user) => {
   if (!rows.length) return;
 
   const gw = rows[0];
-  if (gw.min_join <= 0) return; // only for min-join mode
+  if (gw.min_join <= 0) return;
 
   const currentEntrants = await getEntrantCount(message);
 
@@ -274,13 +274,13 @@ client.on('interactionCreate', async interaction => {
       return;
     }
 
-    // Slash commands (staff only)
+    // Slash commands
     if (interaction.isChatInputCommand()) {
       if (!allowed(interaction.member)) {
         return interaction.reply({ content: 'You are not staff.', ephemeral: true });
       }
 
-      await interaction.deferReply({ ephemeral: true });
+      await interaction.deferReply({ flags: 64 });  // future-proof, fixes deprecation warning
 
       const cmd = interaction.commandName;
 
@@ -334,7 +334,14 @@ client.on('interactionCreate', async interaction => {
       }
 
       else if (cmd === 'giveaway') {
-        const sub = interaction.options.getSubcommand();
+        const sub = interaction.options.getSubcommand(false);
+
+        if (!sub) {
+          return interaction.editReply({
+            content: 'Please use a subcommand: `start` or `end`.\nExample: `/giveaway start prize:"Nitro" winners:1 min_join:10`',
+            flags: 64
+          });
+        }
 
         if (sub === 'start') {
           const prize = interaction.options.getString('prize', true);
@@ -342,24 +349,24 @@ client.on('interactionCreate', async interaction => {
           const minJoin = interaction.options.getInteger('min_join') ?? 0;
 
           if (winners < 1 || winners > 10) {
-            return interaction.editReply('Number of winners must be 1–10.');
+            return interaction.editReply({ content: 'Winners must be 1–10.', flags: 64 });
           }
           if (minJoin < 0 || minJoin > 1000) {
-            return interaction.editReply('Minimum join requirement must be 0–1000.');
+            return interaction.editReply({ content: 'Min join must be 0–1000.', flags: 64 });
           }
 
-          let description = `**Prize:** ${prize}\n**Winners:** ${winners}\n\n**React with 🎉 to enter!**\nGood luck everyone!`;
+          let description = `**Prize:** ${prize}\n**Winners:** ${winners}\n\n**React with 🎉 to enter!**\nGood luck!`;
 
           let endTime = null;
           if (minJoin === 0) {
             const duration = interaction.options.getInteger('duration', true);
             if (!duration || duration < 1 || duration > 10080) {
-              return interaction.editReply('When min_join is 0, duration is required (1–10080 minutes).');
+              return interaction.editReply({ content: 'Duration (1–10080 min) required when min_join = 0.', flags: 64 });
             }
             endTime = Date.now() + duration * 60 * 1000;
-            description += `\n**Ends:** <t:${Math.floor(endTime/1000)}:R> (<t:${Math.floor(endTime/1000)}:f>)`;
+            description += `\n**Ends:** <t:${Math.floor(endTime/1000)}:R>`;
           } else {
-            description += `\n**Ends when ${minJoin} people join** (no fixed timer)`;
+            description += `\n**Ends when ${minJoin} people join**`;
           }
 
           const embed = new EmbedBuilder()
@@ -369,7 +376,7 @@ client.on('interactionCreate', async interaction => {
             .setFooter({ text: `Hosted by ${interaction.user.tag}` });
 
           const msg = await interaction.channel.send({ embeds: [embed] });
-          await msg.react('🎉').catch(console.error);
+          await msg.react('🎉').catch(() => {});
 
           await pool.query(
             `INSERT INTO giveaways (message_id, channel_id, end_time, prize, winners, min_join)
@@ -384,14 +391,14 @@ client.on('interactionCreate', async interaction => {
           const msgId = interaction.options.getString('message_id', true);
 
           const { rows } = await pool.query(`SELECT * FROM giveaways WHERE message_id = $1`, [msgId]);
-          if (!rows.length) return interaction.editReply('No active giveaway with that message ID.');
+          if (!rows.length) return interaction.editReply({ content: 'No active giveaway with that message ID.', flags: 64 });
 
           const gw = rows[0];
           const ch = await client.channels.fetch(gw.channel_id).catch(() => null);
-          if (!ch) return interaction.editReply('Channel not found.');
+          if (!ch) return interaction.editReply({ content: 'Channel not found.', flags: 64 });
 
           const msg = await ch.messages.fetch(msgId).catch(() => null);
-          if (!msg) return interaction.editReply('Giveaway message not found.');
+          if (!msg) return interaction.editReply({ content: 'Giveaway message not found.', flags: 64 });
 
           const entrants = await getEntrantCount(msg);
           const winnersList = await pickWinners(msg, gw.winners);
@@ -411,14 +418,14 @@ client.on('interactionCreate', async interaction => {
           }
 
           await pool.query(`DELETE FROM giveaways WHERE message_id = $1`, [msgId]);
-          await interaction.editReply('Giveaway ended early.');
+          await interaction.editReply({ content: 'Giveaway ended early.', flags: 64 });
         }
       }
     }
   } catch (err) {
     console.error('Interaction error:', err);
     if (!interaction.replied && !interaction.deferred) {
-      await interaction.reply({ content: 'Something went wrong.', ephemeral: true }).catch(() => {});
+      await interaction.reply({ content: 'Something went wrong.', flags: 64 }).catch(() => {});
     }
   }
 });
@@ -553,7 +560,7 @@ client.once('ready', async () => {
 
   try {
     await rest.put(Routes.applicationGuildCommands(client.user.id, process.env.GUILD_ID), { body: commands });
-    console.log('Slash commands registered: /ban, /unban, /revoke, /giveaway');
+    console.log('Slash commands registered');
   } catch (err) {
     console.error('Failed to register commands:', err);
   }
