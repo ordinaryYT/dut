@@ -218,7 +218,7 @@ client.on('interactionCreate', async interaction => {
       client.ticketState[channel.id] = { waitingForUser: true, userId: interaction.user.id };
       const greet = await ai(`Hello ${interaction.user.username}, welcome to your ticket! How can I help you today?`);
       await channel.send(greet);
-      await interaction.reply({ content: 'Ticket created! → ' + channel, ephemeral: true });
+      await interaction.reply({ content: 'Ticket created! → ' + channel, flags: 64 });
       return;
     }
 
@@ -247,11 +247,11 @@ client.on('interactionCreate', async interaction => {
 
     // Staff application approve/deny
     if (interaction.isButton() && (interaction.customId.startsWith('approve_') || interaction.customId.startsWith('deny_'))) {
-      if (!allowed(interaction.member)) return interaction.reply({ content: 'Only staff can use these buttons.', ephemeral: true });
+      if (!allowed(interaction.member)) return interaction.reply({ content: 'Only staff can use these buttons.', flags: 64 });
 
       const [action, appId] = interaction.customId.split('_');
       const { rows } = await pool.query(`SELECT * FROM mod_apps WHERE id = $1`, [appId]);
-      if (!rows.length) return interaction.reply({ content: 'Application not found.', ephemeral: true });
+      if (!rows.length) return interaction.reply({ content: 'Application not found.', flags: 64 });
 
       const app = rows[0];
       const embed = EmbedBuilder.from(interaction.message.embeds[0]);
@@ -277,17 +277,17 @@ client.on('interactionCreate', async interaction => {
     // Slash commands
     if (interaction.isChatInputCommand()) {
       if (!allowed(interaction.member)) {
-        return interaction.reply({ content: 'You are not staff.', ephemeral: true });
+        return interaction.reply({ content: 'You are not staff.', flags: 64 });
       }
 
-      await interaction.deferReply({ flags: 64 });  // future-proof, fixes deprecation warning
+      await interaction.deferReply({ flags: 64 });
 
       const cmd = interaction.commandName;
 
       if (cmd === 'ban') {
         const user = interaction.options.getUser('user');
         const member = await interaction.guild.members.fetch(user.id).catch(() => null);
-        if (!member) return interaction.editReply('User not found in server.');
+        if (!member) return interaction.editReply({ content: 'User not found in server.', flags: 64 });
 
         await pool.query(
           `INSERT INTO warnings(user_id, count) VALUES($1, 5)
@@ -299,26 +299,26 @@ client.on('interactionCreate', async interaction => {
         const log = interaction.guild.channels.cache.get(process.env.STAFF_LOG_CHANNEL_ID);
         if (log) await log.send(`${member} reached 5 warnings — review for permanent ban`);
 
-        await interaction.editReply(`✅ ${member} flagged for permanent ban review (warnings set to 5).`);
+        await interaction.editReply({ content: `✅ ${member} flagged for permanent ban review (warnings set to 5).`, flags: 64 });
       }
 
       else if (cmd === 'unban') {
         const user = interaction.options.getUser('user');
         const member = await interaction.guild.members.fetch(user.id).catch(() => null);
-        if (!member) return interaction.editReply('User not found in server.');
+        if (!member) return interaction.editReply({ content: 'User not found in server.', flags: 64 });
 
         await member.roles.remove(process.env.WEEK_BAN_ROLE_ID).catch(() => {});
-        await interaction.editReply(`✅ Removed ban review role from ${member}. Warnings unchanged.`);
+        await interaction.editReply({ content: `✅ Removed ban review role from ${member}. Warnings unchanged.`, flags: 64 });
       }
 
       else if (cmd === 'revoke') {
         const user = interaction.options.getUser('user');
         const amount = interaction.options.getInteger('amount') ?? 1;
 
-        if (amount < 1) return interaction.editReply('Amount must be at least 1.');
+        if (amount < 1) return interaction.editReply({ content: 'Amount must be at least 1.', flags: 64 });
 
         const member = await interaction.guild.members.fetch(user.id).catch(() => null);
-        if (!member) return interaction.editReply('User not found in server.');
+        if (!member) return interaction.editReply({ content: 'User not found in server.', flags: 64 });
 
         const res = await pool.query(
           `UPDATE warnings SET count = GREATEST(count - $1, 0) WHERE user_id = $2 RETURNING count`,
@@ -330,7 +330,7 @@ client.on('interactionCreate', async interaction => {
         const log = interaction.guild.channels.cache.get(process.env.STAFF_LOG_CHANNEL_ID);
         if (log) await log.send(`${interaction.user} removed **${amount}** warning(s) from ${member} → now at ${newCount}`);
 
-        await interaction.editReply(`✅ Removed **${amount}** warning(s) from ${member}. New total: **${newCount}**`);
+        await interaction.editReply({ content: `✅ Removed **${amount}** warning(s) from ${member}. New total: **${newCount}**`, flags: 64 });
       }
 
       else if (cmd === 'giveaway') {
@@ -338,7 +338,7 @@ client.on('interactionCreate', async interaction => {
 
         if (!sub) {
           return interaction.editReply({
-            content: 'Please use a subcommand: `start` or `end`.\nExample: `/giveaway start prize:"Nitro" winners:1 min_join:10`',
+            content: 'Please select a subcommand: `start` or `end`.\nExample: `/giveaway start prize:"Nitro" winners:1 min_join:10`',
             flags: 64
           });
         }
@@ -384,7 +384,7 @@ client.on('interactionCreate', async interaction => {
             [msg.id, interaction.channel.id, endTime, prize, winners, minJoin]
           );
 
-          await interaction.editReply(`Giveaway started → ${msg.url}`);
+          await interaction.editReply({ content: `Giveaway started → ${msg.url}`, flags: 64 });
         }
 
         else if (sub === 'end') {
@@ -559,8 +559,14 @@ client.once('ready', async () => {
   const rest = new REST({ version: '10' }).setToken(process.env.DISCORD_TOKEN);
 
   try {
+    // Make sure GUILD_ID is defined!
+    if (!process.env.GUILD_ID) {
+      console.error('ERROR: GUILD_ID is not set in environment variables! Cannot register guild commands.');
+      return;
+    }
+
     await rest.put(Routes.applicationGuildCommands(client.user.id, process.env.GUILD_ID), { body: commands });
-    console.log('Slash commands registered');
+    console.log('Slash commands registered successfully');
   } catch (err) {
     console.error('Failed to register commands:', err);
   }
