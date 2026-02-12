@@ -20,7 +20,7 @@ const { Pool } = require('pg');
 const app = express();
 app.use(express.urlencoded({ extended: true }));
 app.use(express.json());
-app.use(cookieParser('hardcoded-secret-please-change-this-to-something-secure-69420abcxyz')); // hardcoded as requested
+app.use(cookieParser('hardcoded-secret-change-this-to-something-secure-69420abcxyz'));
 app.use(express.static(__dirname));
 
 /* ================= DATABASE ================= */
@@ -57,7 +57,6 @@ const pool = new Pool({
       );
     `);
 
-    // Auto-add missing columns if needed
     await pool.query(`
       ALTER TABLE giveaways ADD COLUMN IF NOT EXISTS winners INT DEFAULT 1;
       ALTER TABLE giveaways ADD COLUMN IF NOT EXISTS min_join INT DEFAULT 0;
@@ -65,7 +64,7 @@ const pool = new Pool({
 
     console.log('Database tables and columns ready');
   } catch (err) {
-    console.error('Database migration failed:', err);
+    console.error('Database setup/migration failed:', err);
   }
 })();
 
@@ -347,7 +346,7 @@ client.on('interactionCreate', async interaction => {
 
         if (!sub) {
           return interaction.editReply({
-            content: 'Please select a subcommand: `start` or `end`.\nExample: `/giveaway start prize:"Nitro" winners:1 min_join:10`',
+            content: 'Please select a subcommand: `start` or `end`.',
             flags: 64
           });
         }
@@ -531,18 +530,25 @@ app.post('/apply', async (req, res) => {
     const uidFromForm = req.body.uid;
     const uidFromCookie = req.cookies.auth_uid;
 
-    console.log('[/apply] Request received');
-    console.log('Form uid:', uidFromForm);
-    console.log('Cookie uid:', uidFromCookie);
+    console.log('[/apply] POST received');
+    console.log('Form uid:', uidFromForm || 'undefined');
+    console.log('Cookie uid:', uidFromCookie || 'undefined');
 
-    if (!uidFromCookie || uidFromForm !== uidFromCookie) {
-      console.log('Session mismatch or expired');
-      return res.status(401).send('Session expired or invalid. Please log in again.');
+    if (!uidFromCookie) {
+      console.log('No cookie uid — session missing');
+      return res.status(401).send('Session expired. Please log in again.');
     }
 
-    const user = sessions.get(uidFromCookie);
+    if (uidFromForm && uidFromForm !== uidFromCookie) {
+      console.log('uid mismatch');
+      return res.status(401).send('Session mismatch. Please log in again.');
+    }
+
+    const effectiveUid = uidFromCookie;
+
+    const user = sessions.get(effectiveUid);
     if (!user) {
-      console.log('No user in session for uid:', uidFromCookie);
+      console.log('No user in session for uid:', effectiveUid);
       return res.status(401).send('Session expired. Please log in again.');
     }
 
@@ -574,15 +580,15 @@ app.post('/apply', async (req, res) => {
     );
 
     const channel = await client.channels.fetch(process.env.STAFF_APPS_CHANNEL_ID).catch(err => {
-      console.error('Failed to fetch staff apps channel:', err);
+      console.error('Failed to fetch staff channel:', err);
       return null;
     });
 
     if (channel) {
       await channel.send({ embeds: [embed], components: [row] });
-      console.log('Application submitted to channel');
+      console.log('Application posted to channel');
     } else {
-      console.warn('Staff apps channel not found');
+      console.warn('Staff channel not found');
     }
 
     res.sendStatus(200);
