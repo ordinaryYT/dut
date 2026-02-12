@@ -62,9 +62,9 @@ const pool = new Pool({
       ALTER TABLE giveaways ADD COLUMN IF NOT EXISTS min_join INT DEFAULT 0;
     `);
 
-    console.log('Database tables and columns ready');
+    console.log('Database ready');
   } catch (err) {
-    console.error('Database setup/migration failed:', err);
+    console.error('Database setup failed:', err);
   }
 })();
 
@@ -80,6 +80,9 @@ const client = new Client({
 });
 client.ticketState = {};
 
+/* ================= PENDING VERIFICATIONS (for rules + Fortnite name) ================= */
+const pendingVerifications = new Map();
+
 /* ================= AI HELPER ================= */
 async function ai(prompt) {
   try {
@@ -94,12 +97,12 @@ async function ai(prompt) {
         messages: [{ role: 'user', content: prompt }]
       })
     });
-    if (!r.ok) return 'AI service unavailable.';
+    if (!r.ok) return 'AI unavailable.';
     const d = await r.json();
-    return d.choices?.[0]?.message?.content?.trim() || 'How can I assist you today?';
+    return d.choices?.[0]?.message?.content?.trim() || 'How can I help?';
   } catch (err) {
     console.error('AI error:', err);
-    return 'AI is currently offline.';
+    return 'AI offline.';
   }
 }
 
@@ -205,7 +208,7 @@ client.on('messageReactionAdd', async (reaction, user) => {
   }
 });
 
-/* ================= INTERACTIONS ================= */
+/* ================= INTERACTIONS (staff apps, tickets, slash commands) ================= */
 client.on('interactionCreate', async interaction => {
   if (!interaction.isButton() && !interaction.isChatInputCommand()) return;
 
@@ -446,16 +449,131 @@ client.on('guildMemberAdd', async member => {
   await channel.send(msg).catch(() => {});
 });
 
-/* ================= WEBSITE ROUTES ================= */
-app.get('/', (req, res) => res.sendFile(__dirname + '/index.html'));
+/* ================= RULES & VERIFICATION SYSTEM ================= */
+client.on('messageCreate', async (message) => {
+  if (message.author.bot) return;
 
-app.get('/clips', (req, res) => {
-  res.json({
-    clips: (process.env.TIKTOK_CLIPS || '').split(',').filter(Boolean),
-    gifters: (process.env.GIFTER_CLIPS || '').split(',').filter(Boolean)
-  });
+  // Admin command to send rules embed
+  if (message.content === '!sendrules') {
+    if (!message.member.permissions.has('ADMINISTRATOR')) {
+      return message.reply('❌ You need administrator permissions.');
+    }
+
+    const rulesEmbed = new EmbedBuilder()
+      .setTitle('📜 Server Rules')
+      .setDescription(`Please read and agree to the following rules:
+
+1. Be respectful to everyone
+2. No spamming or advertising
+3. No NSFW content
+4. Follow Discord ToS
+5. Use appropriate channels
+
+**If you agree to these rules, react with ✅ below**`)
+      .setColor(0x00ff00)
+      .setFooter({ text: 'React to verify & continue' });
+
+    const sent = await message.channel.send({ embeds: [rulesEmbed] });
+    await sent.react('✅');
+
+    pendingVerifications.set(sent.id, {
+      channelId: message.channel.id,
+      guildId: message.guild.id,
+      type: 'rules'
+    });
+
+    return message.reply('Rules message sent! Users can now react with ✅ to agree and verify.');
+  }
 });
 
+/* ================= REACTION HANDLER (Rules → DM for Fortnite name) ================= */
+client.on('messageReactionAdd', async (reaction, user) => {
+  if (user.bot) return;
+  if (reaction.partial) try { await reaction.fetch(); } catch { return; }
+
+  const data = pendingVerifications.get(reaction.message.id);
+  if (!data || data.type !== 'rules') return;
+
+  if (reaction.emoji.name === '✅') {
+    try {
+      const dm = await user.send(
+        `Thank you for agreeing to the rules!\n\n**Now please type your Fortnite username** (exactly as in-game).`
+      );
+
+      pendingVerifications.set(user.id, {
+        messageId: reaction.message.id,
+        dmChannelId: dm.channel.id,
+        startedAt: new Date(),
+        guildId: data.guildId,
+        type: 'fortnite_username'
+      });
+
+      console.log(`Sent DM to ${user.tag} asking for Fortnite name`);
+    } catch (err) {
+      console.error('Could not DM user:', err);
+      const ch = await client.channels.fetch(data.channelId);
+      ch.send(`<@${user.id}> I couldn't send you a DM. Please enable DMs from server members and react again.`);
+    }
+  }
+});
+
+/* ================= DM HANDLER (Fortnite name → Nickname change) ================= */
+client.on('messageCreate', async (message) => {
+  if (message.guild || message.author.bot) return;
+
+  const data = pendingVerifications.get(message.author.id);
+  if (!data || data.type !== 'fortnite_username') return;
+
+  const fortniteUsername = message.content.trim();
+  console.log(`DM from ${message.author.tag}: Fortnite name "${fortniteUsername}"`);
+
+  const guild = client.guilds.cache.get(data.guildId);
+  if (!guild) {
+    await message.author.send('Error: Server not found. Contact staff.');
+    pendingVerifications.delete(message.author.id);
+    return;
+  }
+
+  const member = await guild.members.fetch(message.author.id).catch(() => null);
+  if (!member) {
+    await message.author.send('Error: You are not in the server anymore.');
+    pendingVerifications.delete(message.author.id);
+    return;
+  }
+
+  try {
+    const originalNick = member.nickname || message.author.username;
+    const newNick = `${originalNick}(${fortniteUsername})`;
+
+    await member.setNickname(newNick, 'User verified via rules agreement');
+
+    await message.author.send(`✅ Success!\nYour server nickname is now **${newNick}**\nEnjoy the server!`);
+
+    // Log to channel
+    const logChannel = await client.channels.fetch(process.env.STAFF_APPS_CHANNEL_ID || process.env.FORTNITE_CHANNEL_ID);
+    if (logChannel) {
+      const embed = new EmbedBuilder()
+        .setTitle('✅ USER VERIFIED & NICKNAME UPDATED')
+        .setColor(0x00ff00)
+        .addFields(
+          { name: 'Discord User', value: `<@${message.author.id}>`, inline: true },
+          { name: 'Fortnite Name', value: fortniteUsername, inline: true },
+          { name: 'New Nickname', value: newNick, inline: false }
+        )
+        .setTimestamp();
+
+      await logChannel.send({ embeds: [embed] });
+    }
+
+  } catch (err) {
+    console.error('Nickname change failed:', err);
+    await message.author.send('❌ Could not update nickname (missing perms or name too long). Contact staff.');
+  }
+
+  pendingVerifications.delete(message.author.id);
+});
+
+/* ================= WEBSITE ROUTES (staff applications) ================= */
 const sessions = new Map();
 
 app.get('/auth/discord', (req, res) => {
