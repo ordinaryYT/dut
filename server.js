@@ -80,7 +80,7 @@ const client = new Client({
 });
 client.ticketState = {};
 
-/* ================= PENDING VERIFICATIONS (for rules + Fortnite name) ================= */
+/* ================= PENDING REACTIONS ================= */
 const pendingVerifications = new Map();
 
 /* ================= AI HELPER ================= */
@@ -208,12 +208,11 @@ client.on('messageReactionAdd', async (reaction, user) => {
   }
 });
 
-/* ================= INTERACTIONS (staff apps, tickets, slash commands) ================= */
+/* ================= INTERACTIONS ================= */
 client.on('interactionCreate', async interaction => {
   if (!interaction.isButton() && !interaction.isChatInputCommand()) return;
 
   try {
-    // Ticket create
     if (interaction.isButton() && interaction.customId === 'create_ticket') {
       const guild = interaction.guild;
       const channel = await guild.channels.create({
@@ -233,7 +232,6 @@ client.on('interactionCreate', async interaction => {
       return;
     }
 
-    // Ticket buttons
     if (interaction.isButton()) {
       const channel = interaction.channel;
       const state = client.ticketState[channel?.id];
@@ -256,7 +254,6 @@ client.on('interactionCreate', async interaction => {
       return;
     }
 
-    // Staff application approve/deny
     if (interaction.isButton() && (interaction.customId.startsWith('approve_') || interaction.customId.startsWith('deny_'))) {
       if (!allowed(interaction.member)) return interaction.reply({ content: 'Only staff can use these buttons.', flags: 64 });
 
@@ -285,7 +282,6 @@ client.on('interactionCreate', async interaction => {
       return;
     }
 
-    // Slash commands
     if (interaction.isChatInputCommand()) {
       if (!allowed(interaction.member)) {
         return interaction.reply({ content: 'You are not staff.', flags: 64 });
@@ -449,11 +445,10 @@ client.on('guildMemberAdd', async member => {
   await channel.send(msg).catch(() => {});
 });
 
-/* ================= RULES & VERIFICATION SYSTEM ================= */
+/* ================= RULES SYSTEM ================= */
 client.on('messageCreate', async (message) => {
   if (message.author.bot) return;
 
-  // Admin command to send rules embed
   if (message.content === '!sendrules') {
     if (!message.member.permissions.has('ADMINISTRATOR')) {
       return message.reply('❌ You need administrator permissions.');
@@ -461,17 +456,44 @@ client.on('messageCreate', async (message) => {
 
     const rulesEmbed = new EmbedBuilder()
       .setTitle('📜 Server Rules')
-      .setDescription(`Please read and agree to the following rules:
+      .setDescription(`**Rules**
+Be respectful  
+You must respect all users, regardless of your liking towards them. Treat others the way you want to be treated.
 
-1. Be respectful to everyone
-2. No spamming or advertising
-3. No NSFW content
-4. Follow Discord ToS
-5. Use appropriate channels
+No Inappropriate Language  
+The use of profanity should be kept to a minimum. However, any derogatory language towards any user is prohibited.
+
+No spamming  
+Don't send a lot of small messages right after each other. Do not disrupt chat by spamming.
+
+No pornographic/adult/other NSFW material  
+This is a community server and not meant to share this kind of material.
+
+No advertisements  
+We do not tolerate any kind of advertisements, whether it be for other communities or streams. You can post your content in the media channel if it is relevant and provides actual value (Video/Art)
+
+No offensive names and profile pictures  
+You will be asked to change your name or picture if the staff deems them inappropriate.
+
+Server Raiding  
+Raiding or mentions of raiding are not allowed.
+
+Direct & Indirect Threats  
+Threats to other users of DDoS, Death, DoX, abuse, and other malicious threats are absolutely prohibited and disallowed.
+
+Follow the Discord Community Guidelines  
+You can find them here: https://discordapp.com/guidelines
+
+**Warning System**  
+First Warning — No action will be taken.  
+Second Warning — 1 Hour Mute  
+Third Warning — 1 Day Mute  
+Fourth Warning — 1 Week Ban  
+Fifth Warning — Permanent Ban
 
 **If you agree to these rules, react with ✅ below**`)
       .setColor(0x00ff00)
-      .setFooter({ text: 'React to verify & continue' });
+      .setFooter({ text: 'React to continue' });
 
     const sent = await message.channel.send({ embeds: [rulesEmbed] });
     await sent.react('✅');
@@ -482,11 +504,11 @@ client.on('messageCreate', async (message) => {
       type: 'rules'
     });
 
-    return message.reply('Rules message sent! Users can now react with ✅ to agree and verify.');
+    return message.reply('Rules message sent!');
   }
 });
 
-/* ================= REACTION HANDLER (Rules → DM for Fortnite name) ================= */
+/* ================= REACTION HANDLER ================= */
 client.on('messageReactionAdd', async (reaction, user) => {
   if (user.bot) return;
   if (reaction.partial) try { await reaction.fetch(); } catch { return; }
@@ -496,85 +518,66 @@ client.on('messageReactionAdd', async (reaction, user) => {
 
   if (reaction.emoji.name === '✅') {
     try {
-      const dm = await user.send(
-        `Thank you for agreeing to the rules!\n\n**Now please type your Fortnite username** (exactly as in-game).`
-      );
-
-      pendingVerifications.set(user.id, {
-        messageId: reaction.message.id,
-        dmChannelId: dm.channel.id,
-        startedAt: new Date(),
-        guildId: data.guildId,
-        type: 'fortnite_username'
+      // Ephemeral reply visible only to the user who reacted
+      await reaction.message.reply({
+        content: `<@${user.id}> Please link your Fortnite account to continue: https://thebigdutz.qzz.io/fortniteauth`,
+        flags: 64 // Ephemeral = only visible to the user
       });
 
-      console.log(`Sent DM to ${user.tag} asking for Fortnite name`);
+      console.log(`Ephemeral link sent to ${user.tag} in channel`);
     } catch (err) {
-      console.error('Could not DM user:', err);
-      const ch = await client.channels.fetch(data.channelId);
-      ch.send(`<@${user.id}> I couldn't send you a DM. Please enable DMs from server members and react again.`);
+      console.error('Failed to send ephemeral reply:', err);
     }
   }
 });
 
-/* ================= DM HANDLER (Fortnite name → Nickname change) ================= */
-client.on('messageCreate', async (message) => {
-  if (message.guild || message.author.bot) return;
-
-  const data = pendingVerifications.get(message.author.id);
-  if (!data || data.type !== 'fortnite_username') return;
-
-  const fortniteUsername = message.content.trim();
-  console.log(`DM from ${message.author.tag}: Fortnite name "${fortniteUsername}"`);
-
-  const guild = client.guilds.cache.get(data.guildId);
-  if (!guild) {
-    await message.author.send('Error: Server not found. Contact staff.');
-    pendingVerifications.delete(message.author.id);
-    return;
-  }
-
-  const member = await guild.members.fetch(message.author.id).catch(() => null);
-  if (!member) {
-    await message.author.send('Error: You are not in the server anymore.');
-    pendingVerifications.delete(message.author.id);
-    return;
-  }
-
-  try {
-    const originalNick = member.nickname || message.author.username;
-    const newNick = `${originalNick}(${fortniteUsername})`;
-
-    await member.setNickname(newNick, 'User verified via rules agreement');
-
-    await message.author.send(`✅ Success!\nYour server nickname is now **${newNick}**\nEnjoy the server!`);
-
-    // Log to channel
-    const logChannel = await client.channels.fetch(process.env.STAFF_APPS_CHANNEL_ID || process.env.FORTNITE_CHANNEL_ID);
-    if (logChannel) {
-      const embed = new EmbedBuilder()
-        .setTitle('✅ USER VERIFIED & NICKNAME UPDATED')
-        .setColor(0x00ff00)
-        .addFields(
-          { name: 'Discord User', value: `<@${message.author.id}>`, inline: true },
-          { name: 'Fortnite Name', value: fortniteUsername, inline: true },
-          { name: 'New Nickname', value: newNick, inline: false }
-        )
-        .setTimestamp();
-
-      await logChannel.send({ embeds: [embed] });
-    }
-
-  } catch (err) {
-    console.error('Nickname change failed:', err);
-    await message.author.send('❌ Could not update nickname (missing perms or name too long). Contact staff.');
-  }
-
-  pendingVerifications.delete(message.author.id);
-});
-
-/* ================= WEBSITE ROUTES (staff applications) ================= */
+/* ================= WEBSITE ROUTES ================= */
 const sessions = new Map();
+
+app.get('/', (req, res) => res.sendFile(__dirname + '/index.html'));
+
+app.get('/clips', (req, res) => {
+  res.json({
+    clips: (process.env.TIKTOK_CLIPS || '').split(',').filter(Boolean),
+    gifters: (process.env.GIFTER_CLIPS || '').split(',').filter(Boolean)
+  });
+});
+
+app.get('/fortniteauth', (req, res) => {
+  res.send(`
+    <!DOCTYPE html>
+    <html lang="en">
+    <head>
+      <meta charset="UTF-8">
+      <title>Link Fortnite Account</title>
+      <script src="https://cdn.tailwindcss.com"></script>
+    </head>
+    <body class="bg-gray-900 text-white p-8">
+      <div class="max-w-md mx-auto bg-gray-800 p-6 rounded-lg">
+        <h1 class="text-2xl font-bold mb-4">Link Your Fortnite Account</h1>
+        <form action="/submit-fortnite" method="POST" class="space-y-4">
+          <input type="text" name="fortnite_username" placeholder="Your Fortnite Username" class="w-full p-3 bg-gray-700 rounded" required>
+          <input type="text" name="discord_id" placeholder="Your Discord ID (optional)" class="w-full p-3 bg-gray-700 rounded">
+          <button type="submit" class="w-full bg-green-600 p-3 rounded font-bold">Link Account</button>
+        </form>
+      </div>
+    </body>
+    </html>
+  `);
+});
+
+app.post('/submit-fortnite', async (req, res) => {
+  const { fortnite_username, discord_id } = req.body;
+  console.log('Fortnite link submitted:', { fortnite_username, discord_id });
+  // TODO: Save to DB, verify, or notify staff - for now just log
+  res.send(`
+    <div class="bg-gray-900 text-white p-8 text-center">
+      <h1 class="text-3xl font-bold mb-4">Thank You!</h1>
+      <p>Your Fortnite account has been submitted.</p>
+      <p>Return to Discord and continue chatting!</p>
+    </div>
+  `);
+});
 
 app.get('/auth/discord', (req, res) => {
   if (!process.env.CLIENT_ID_AUTH || !process.env.CLIENT_SECRET_AUTH) {
