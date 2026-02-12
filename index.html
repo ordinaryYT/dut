@@ -36,7 +36,6 @@
 <section id="clips" class="section hidden px-6 py-20">
   <h2 class="text-4xl font-bold mb-10">🔥 Best Fortnite Clips</h2>
   <div id="clipsGrid" class="grid md:grid-cols-3 gap-8">
-    <!-- Your specified top clip -->
     <blockquote class="tiktok-embed" cite="https://www.tiktok.com/@thebigdutz/video/7599742111117872406" data-video-id="7599742111117872406" style="max-width: 605px;min-width: 325px;">
       <section>
         <a target="_blank" title="@thebigdutz" href="https://www.tiktok.com/@thebigdutz?refer=embed">@thebigdutz</a>
@@ -50,7 +49,6 @@
 <section id="gifters" class="section hidden px-6 py-20">
   <h2 class="text-4xl font-bold mb-10">🏆 Top Gifter Clips</h2>
   <div id="giftersGrid" class="grid md:grid-cols-3 gap-8">
-    <!-- Your specified gift video -->
     <blockquote class="tiktok-embed" cite="https://www.tiktok.com/@thebigdutz/video/7599770469356670230" data-video-id="7599770469356670230" style="max-width: 605px;min-width: 325px;">
       <section>
         <a target="_blank" title="@thebigdutz" href="https://www.tiktok.com/@thebigdutz?refer=embed">@thebigdutz</a>
@@ -76,7 +74,7 @@
     <input name="timezone" placeholder="Timezone" class="w-full p-3 bg-zinc-900 rounded-xl" required>
     <textarea name="experience" placeholder="Staff experience" class="w-full p-3 bg-zinc-900 rounded-xl" required></textarea>
     <textarea name="reason" placeholder="Why should we accept you?" class="w-full p-3 bg-zinc-900 rounded-xl" required></textarea>
-    <button class="bg-green-600 px-6 py-3 rounded-xl font-bold w-full">Submit</button>
+    <button type="submit" class="bg-green-600 px-6 py-3 rounded-xl font-bold w-full">Submit</button>
   </form>
 
   <div id="done" class="hidden text-green-400 font-bold text-center mt-8">
@@ -92,22 +90,65 @@ function show(id){
   document.getElementById(id).classList.remove('hidden')
 }
 
-const uid = new URLSearchParams(window.location.search).get('uid')
-if(uid){
-  document.getElementById('loginBox').classList.add('hidden')
-  document.getElementById('appForm').classList.remove('hidden')
+let uid = new URLSearchParams(window.location.search).get('uid');
+
+if (!uid) {
+  function getCookie(name) {
+    const value = `; ${document.cookie}`;
+    const parts = value.split(`; ${name}=`);
+    if (parts.length === 2) return parts.pop().split(';').shift();
+  }
+  uid = getCookie('auth_uid');
 }
 
-document.getElementById('appForm')?.addEventListener('submit', async e => {
-  e.preventDefault()
-  const fd = new FormData(e.target)
-  fd.append('uid', uid)
-  const r = await fetch('/apply', { method: 'POST', body: fd })
-  if(r.ok){
-    document.getElementById('appForm').classList.add('hidden')
-    document.getElementById('done').classList.remove('hidden')
+console.log('Loaded uid:', uid || 'MISSING');
+
+if (uid) {
+  document.getElementById('loginBox')?.classList.add('hidden');
+  const form = document.getElementById('appForm');
+  if (form) {
+    form.classList.remove('hidden');
+    
+    const hidden = document.createElement('input');
+    hidden.type = 'hidden';
+    hidden.name = 'uid';
+    hidden.value = uid;
+    form.appendChild(hidden);
+    
+    console.log('Hidden uid added:', uid);
   }
-})
+}
+
+const appForm = document.getElementById('appForm');
+if (appForm) {
+  appForm.addEventListener('submit', async e => {
+    e.preventDefault();
+    
+    console.log('Submit clicked');
+    
+    const fd = new FormData(e.target);
+    
+    console.log('Form data:');
+    for (let [k, v] of fd.entries()) console.log(`  ${k}: ${v}`);
+
+    try {
+      const r = await fetch('/apply', { method: 'POST', body: fd });
+      console.log('Status:', r.status);
+      
+      if (r.ok) {
+        appForm.classList.add('hidden');
+        document.getElementById('done').classList.remove('hidden');
+      } else {
+        const text = await r.text().catch(() => 'Unknown');
+        console.error('Failed:', r.status, text);
+        alert(`Error ${r.status}: ${text}`);
+      }
+    } catch (err) {
+      console.error('Fetch error:', err);
+      alert('Network error');
+    }
+  });
+}
 </script>
 
 </body>
