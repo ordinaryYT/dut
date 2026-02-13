@@ -80,9 +80,6 @@ const client = new Client({
 });
 client.ticketState = {};
 
-/* ================= PENDING REACTIONS ================= */
-const pendingVerifications = new Map();
-
 /* ================= AI HELPER ================= */
 async function ai(prompt) {
   try {
@@ -493,7 +490,7 @@ Fifth Warning — Permanent Ban
 
 **If you agree to these rules, react with ✅ below**`)
       .setColor(0x00ff00)
-      .setFooter({ text: 'React to continue' });
+      .setFooter({ text: 'React to get Verified role' });
 
     const sent = await message.channel.send({ embeds: [rulesEmbed] });
     await sent.react('✅');
@@ -518,17 +515,35 @@ client.on('messageReactionAdd', async (reaction, user) => {
 
   if (reaction.emoji.name === '✅') {
     try {
-      // Ephemeral reply visible only to the user who reacted
-      await reaction.message.channel.send({
-        content: `<@${user.id}> Please link your Fortnite account to continue: https://thebigdutz.qzz.io/fortniteauth`,
-        flags: 64 // Ephemeral = only visible to the user
+      const guild = reaction.message.guild;
+      const member = await guild.members.fetch(user.id);
+
+      // Give verified role
+      await member.roles.add(process.env.VERIFIED_ROLE_ID).catch(err => {
+        console.error('Role add failed:', err);
       });
 
-      console.log(`Ephemeral Fortnite link sent to ${user.tag}`);
+      // Ping Render to keep alive (once per reaction)
+      fetch('https://thebigdutz.qzz.io/ping')
+        .then(r => console.log('Pinged Render to stay awake'))
+        .catch(err => console.error('Render ping failed:', err));
+
+      // Ephemeral confirmation
+      await reaction.message.channel.send({
+        content: `<@${user.id}> You have been verified!`,
+        flags: 64
+      });
+
+      console.log(`Verified ${user.tag} - gave role`);
     } catch (err) {
-      console.error('Failed to send ephemeral message:', err);
+      console.error('Verification error:', err);
     }
   }
+});
+
+/* ================= SIMPLE PING ROUTE TO KEEP RENDER ALIVE ================= */
+app.get('/ping', (req, res) => {
+  res.send('Pong - Render kept alive');
 });
 
 /* ================= WEBSITE ROUTES ================= */
@@ -541,40 +556,6 @@ app.get('/clips', (req, res) => {
     clips: (process.env.TIKTOK_CLIPS || '').split(',').filter(Boolean),
     gifters: (process.env.GIFTER_CLIPS || '').split(',').filter(Boolean)
   });
-});
-
-app.get('/fortniteauth', (req, res) => {
-  res.send(`
-    <!DOCTYPE html>
-    <html lang="en">
-    <head>
-      <meta charset="UTF-8">
-      <title>Fortnite Account Link</title>
-      <script src="https://cdn.tailwindcss.com"></script>
-    </head>
-    <body class="bg-gray-900 text-white p-8">
-      <div class="max-w-md mx-auto bg-gray-800 p-6 rounded-lg">
-        <h1 class="text-2xl font-bold mb-4">Link Your Fortnite Account</h1>
-        <form action="/submit-fortnite" method="POST" class="space-y-4">
-          <input type="text" name="fortnite_username" placeholder="Your Fortnite Username" class="w-full p-3 bg-gray-700 rounded" required>
-          <button type="submit" class="w-full bg-green-600 p-3 rounded font-bold">Submit</button>
-        </form>
-      </div>
-    </body>
-    </html>
-  `);
-});
-
-app.post('/submit-fortnite', async (req, res) => {
-  const { fortnite_username } = req.body;
-  console.log('Fortnite username submitted:', fortnite_username);
-  res.send(`
-    <div class="bg-gray-900 text-white p-8 text-center">
-      <h1 class="text-3xl font-bold mb-4">Thank You!</h1>
-      <p>Your Fortnite account has been linked.</p>
-      <p>Return to Discord!</p>
-    </div>
-  `);
 });
 
 app.get('/auth/discord', (req, res) => {
