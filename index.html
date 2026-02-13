@@ -90,7 +90,7 @@ function show(id){
   document.getElementById(id).classList.remove('hidden')
 }
 
-let uid = new URLSearchParams(window.location.search).get('uid');
+let uid = new URLSearchParams(window.location.search).get('uid')
 
 if (!uid) {
   function getCookie(name) {
@@ -104,7 +104,7 @@ if (!uid) {
 console.log('Loaded uid:', uid || 'MISSING');
 
 if (uid) {
-  document.getElementById('loginBox')?.classList.add('hidden');
+  document.getElementById('loginBox')?.classList.add('hidden')
   const form = document.getElementById('appForm');
   if (form) {
     form.classList.remove('hidden');
@@ -119,36 +119,24 @@ if (uid) {
   }
 }
 
-const appForm = document.getElementById('appForm');
-if (appForm) {
-  appForm.addEventListener('submit', async e => {
-    e.preventDefault();
-    
-    console.log('Submit clicked');
-    
-    const fd = new FormData(e.target);
-    
-    console.log('Form data:');
-    for (let [k, v] of fd.entries()) console.log(`  ${k}: ${v}`);
-
-    try {
-      const r = await fetch('/apply', { method: 'POST', body: fd });
-      console.log('Status:', r.status);
-      
-      if (r.ok) {
-        appForm.classList.add('hidden');
-        document.getElementById('done').classList.remove('hidden');
-      } else {
-        const text = await r.text().catch(() => 'Unknown');
-        console.error('Failed:', r.status, text);
-        alert(`Error ${r.status}: ${text}`);
-      }
-    } catch (err) {
-      console.error('Fetch error:', err);
-      alert('Network error');
+document.getElementById('appForm')?.addEventListener('submit', async e => {
+  e.preventDefault()
+  const fd = new FormData(e.target)
+  fd.append('uid', uid)
+  try {
+    const r = await fetch('/apply', { method: 'POST', body: fd })
+    console.log('Apply status:', r.status)
+    if (r.ok) {
+      document.getElementById('appForm').classList.add('hidden')
+      document.getElementById('done').classList.remove('hidden')
+    } else {
+      alert('Submission failed: ' + r.status)
     }
-  });
-}
+  } catch (err) {
+    console.error('Fetch error:', err)
+    alert('Network error')
+  }
+})
 </script>
 
 </body>
