@@ -175,16 +175,23 @@ if (uid) {
   }
 }
 
-// Form submissions
+// Form submissions (now send JSON)
 ['discordAppForm', 'tiktokAppForm'].forEach(formId => {
   const form = document.getElementById(formId);
   if (form) {
     form.addEventListener('submit', async e => {
       e.preventDefault();
-      const fd = new FormData(e.target);
+
+      // Convert FormData to plain object
+      const formData = Object.fromEntries(new FormData(e.target).entries());
 
       try {
-        const r = await fetch('/apply', { method: 'POST', body: fd });
+        const r = await fetch('/apply', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(formData)
+        });
+
         console.log('Apply status:', r.status);
         if (r.ok) {
           document.getElementById('discordForm').classList.add('hidden');
