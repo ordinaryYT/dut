@@ -519,14 +519,14 @@ client.on('messageReactionAdd', async (reaction, user) => {
   if (reaction.emoji.name === '✅') {
     try {
       // Ephemeral reply visible only to the user who reacted
-      await reaction.message.reply({
+      await reaction.message.channel.send({
         content: `<@${user.id}> Please link your Fortnite account to continue: https://thebigdutz.qzz.io/fortniteauth`,
         flags: 64 // Ephemeral = only visible to the user
       });
 
-      console.log(`Ephemeral link sent to ${user.tag} in channel`);
+      console.log(`Ephemeral Fortnite link sent to ${user.tag}`);
     } catch (err) {
-      console.error('Failed to send ephemeral reply:', err);
+      console.error('Failed to send ephemeral message:', err);
     }
   }
 });
@@ -549,7 +549,7 @@ app.get('/fortniteauth', (req, res) => {
     <html lang="en">
     <head>
       <meta charset="UTF-8">
-      <title>Link Fortnite Account</title>
+      <title>Fortnite Account Link</title>
       <script src="https://cdn.tailwindcss.com"></script>
     </head>
     <body class="bg-gray-900 text-white p-8">
@@ -557,8 +557,7 @@ app.get('/fortniteauth', (req, res) => {
         <h1 class="text-2xl font-bold mb-4">Link Your Fortnite Account</h1>
         <form action="/submit-fortnite" method="POST" class="space-y-4">
           <input type="text" name="fortnite_username" placeholder="Your Fortnite Username" class="w-full p-3 bg-gray-700 rounded" required>
-          <input type="text" name="discord_id" placeholder="Your Discord ID (optional)" class="w-full p-3 bg-gray-700 rounded">
-          <button type="submit" class="w-full bg-green-600 p-3 rounded font-bold">Link Account</button>
+          <button type="submit" class="w-full bg-green-600 p-3 rounded font-bold">Submit</button>
         </form>
       </div>
     </body>
@@ -567,14 +566,13 @@ app.get('/fortniteauth', (req, res) => {
 });
 
 app.post('/submit-fortnite', async (req, res) => {
-  const { fortnite_username, discord_id } = req.body;
-  console.log('Fortnite link submitted:', { fortnite_username, discord_id });
-  // TODO: Save to DB, verify, or notify staff - for now just log
+  const { fortnite_username } = req.body;
+  console.log('Fortnite username submitted:', fortnite_username);
   res.send(`
     <div class="bg-gray-900 text-white p-8 text-center">
       <h1 class="text-3xl font-bold mb-4">Thank You!</h1>
-      <p>Your Fortnite account has been submitted.</p>
-      <p>Return to Discord and continue chatting!</p>
+      <p>Your Fortnite account has been linked.</p>
+      <p>Return to Discord!</p>
     </div>
   `);
 });
