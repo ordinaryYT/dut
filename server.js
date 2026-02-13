@@ -626,16 +626,6 @@ app.get('/auth/callback', async (req, res) => {
 
 app.post('/apply', async (req, res) => {
   try {
-    const uidFromForm = req.body.uid;
-    const uidFromCookie = req.cookies.auth_uid;
-
-    if (!uidFromCookie || (uidFromForm && uidFromForm !== uidFromCookie)) {
-      return res.status(401).send('Session invalid.');
-    }
-
-    const user = sessions.get(uidFromCookie);
-    if (!user) return res.status(401).send('Session expired.');
-
     const { 
       app_type = 'discord',
       email,
@@ -644,12 +634,24 @@ app.post('/apply', async (req, res) => {
       tiktok_username,
       tiktok_url,
       experience,
-      reason 
+      reason,
+      uid 
     } = req.body;
 
+    let username = 'Anonymous';
+    let userId = null;
+
+    if (uid) {
+      const user = sessions.get(uid);
+      if (user) {
+        username = user.username;
+        userId = user.id;
+      }
+    }
+
     const queryParams = [
-      user.username,
-      user.id,
+      username,
+      userId,
       app_type,
       email,
       age,
@@ -671,7 +673,7 @@ app.post('/apply', async (req, res) => {
       .setTitle('📋 Staff Application')
       .setColor(0x5865F2)
       .addFields(
-        { name: 'User', value: `${user.username} (${user.id})`, inline: false },
+        { name: 'User', value: userId ? `${username} (${userId})` : 'Anonymous (TikTok Mod)', inline: false },
         { name: 'Type', value: app_type === 'discord' ? 'Discord Moderator' : 'TikTok Moderator', inline: true },
         { name: 'Email', value: email || '—', inline: true },
         { name: 'Age', value: age || '—', inline: true },
