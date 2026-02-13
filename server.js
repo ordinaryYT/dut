@@ -40,8 +40,12 @@ const pool = new Pool({
         id SERIAL PRIMARY KEY,
         username TEXT,
         user_id TEXT,
+        app_type TEXT DEFAULT 'discord',
+        email TEXT,
         age TEXT,
         timezone TEXT,
+        tiktok_username TEXT,
+        tiktok_url TEXT,
         experience TEXT,
         reason TEXT,
         status TEXT DEFAULT 'Pending',
@@ -59,19 +63,19 @@ const pool = new Pool({
 
     await pool.query(`
       ALTER TABLE mod_apps
-      ADD COLUMN IF NOT EXISTS age TEXT,
-      ADD COLUMN IF NOT EXISTS timezone TEXT,
-      ADD COLUMN IF NOT EXISTS experience TEXT,
-      ADD COLUMN IF NOT EXISTS reason TEXT;
+      ADD COLUMN IF NOT EXISTS app_type TEXT DEFAULT 'discord',
+      ADD COLUMN IF NOT EXISTS email TEXT,
+      ADD COLUMN IF NOT EXISTS tiktok_username TEXT,
+      ADD COLUMN IF NOT EXISTS tiktok_url TEXT;
 
       ALTER TABLE giveaways
       ADD COLUMN IF NOT EXISTS winners INT DEFAULT 1,
       ADD COLUMN IF NOT EXISTS min_join INT DEFAULT 0;
     `);
 
-    console.log('Database tables and columns ready');
+    console.log('Database ready');
   } catch (err) {
-    console.error('Database setup/migration failed:', err);
+    console.error('Database setup failed:', err);
   }
 })();
 
@@ -267,13 +271,18 @@ client.on('interactionCreate', async interaction => {
 
       const app = rows[0];
       const embed = EmbedBuilder.from(interaction.message.embeds[0]);
-      embed.spliceFields(5, 1, { name: 'Status', value: action === 'approve' ? '✅ Approved' : '❌ Denied' });
+      embed.spliceFields(embed.fields.findIndex(f => f.name === 'Status'), 1, {
+        name: 'Status',
+        value: action === 'approve' ? '✅ Approved' : '❌ Denied'
+      });
 
       if (action === 'approve') {
         const guild = await client.guilds.fetch(process.env.GUILD_ID).catch(() => null);
         if (guild) {
           const member = await guild.members.fetch(app.user_id).catch(() => null);
-          if (member) await member.roles.add(process.env.STAFF_ROLE_ID).catch(() => {});
+          if (member) {
+            await member.roles.add(process.env.STAFF_ROLE_ID).catch(err => console.error('Role add failed:', err));
+          }
         }
       }
 
@@ -512,7 +521,7 @@ Fifth Warning — Permanent Ban
   }
 });
 
-/* ================= REACTION HANDLER (give role + ping Render) ================= */
+/* ================= REACTION HANDLER ================= */
 client.on('messageReactionAdd', async (reaction, user) => {
   if (user.bot) return;
   if (reaction.partial) try { await reaction.fetch(); } catch { return; }
@@ -525,40 +534,36 @@ client.on('messageReactionAdd', async (reaction, user) => {
       const guild = reaction.message.guild;
       const member = await guild.members.fetch(user.id);
 
-      // Give verified role
       await member.roles.add(process.env.VERIFIED_ROLE_ID).catch(err => {
         console.error('Failed to add role:', err);
       });
 
-      // Ping Render to keep instance awake
       fetch('https://thebigdutz.qzz.io/ping')
         .then(r => console.log('Pinged Render to stay awake'))
         .catch(err => console.error('Render ping failed:', err));
 
-      // Ephemeral confirmation visible only to the user
       await reaction.message.channel.send({
         content: `<@${user.id}> You have been verified!`,
-        flags: 64 // Ephemeral
+        flags: 64
       });
 
-      console.log(`Verified ${user.tag} - gave role ${process.env.VERIFIED_ROLE_ID}`);
+      console.log(`Verified ${user.tag} - gave role`);
     } catch (err) {
       console.error('Verification error:', err);
     }
   }
 });
 
-/* ================= KEEP RENDER ALIVE ENDPOINT ================= */
+/* ================= KEEP RENDER ALIVE ================= */
 app.get('/ping', (req, res) => {
   res.send('Pong - Render instance kept alive');
 });
 
-/* ================= AUTO-PING ITSELF EVERY 1 MINUTE ================= */
 setInterval(() => {
   fetch('https://thebigdutz.qzz.io/ping')
-    .then(r => console.log('Auto-pinged self (every 1 min)'))
+    .then(r => console.log('Auto-pinged self to stay awake'))
     .catch(err => console.error('Self-ping failed:', err));
-}, 1 * 60 * 1000); // 1 minute = 60 seconds
+}, 1 * 60 * 1000);
 
 /* ================= WEBSITE ROUTES ================= */
 const sessions = new Map();
@@ -584,12 +589,7 @@ app.get('/auth/discord', (req, res) => {
 
 app.get('/auth/callback', async (req, res) => {
   try {
-    if (!req.query.code) {
-      console.log('Callback missing code');
-      return res.status(400).send('No code received.');
-    }
-
-    console.log('Fetching token...');
+    if (!req.query.code) return res.status(400).send('No code received.');
 
     const tokenRes = await fetch('https://discord.com/api/oauth2/token', {
       method: 'POST',
@@ -603,11 +603,7 @@ app.get('/auth/callback', async (req, res) => {
       })
     });
 
-    if (!tokenRes.ok) {
-      const errText = await tokenRes.text();
-      console.error('Token fetch failed:', tokenRes.status, errText);
-      throw new Error(`Token fetch failed: ${tokenRes.status} - ${errText}`);
-    }
+    if (!tokenRes.ok) throw new Error('Token fetch failed');
 
     const tokenData = await tokenRes.json();
 
@@ -615,27 +611,16 @@ app.get('/auth/callback', async (req, res) => {
       headers: { Authorization: `Bearer ${tokenData.access_token}` }
     });
 
-    if (!userRes.ok) {
-      const errText = await userRes.text();
-      console.error('User fetch failed:', userRes.status, errText);
-      throw new Error('User fetch failed');
-    }
+    if (!userRes.ok) throw new Error('User fetch failed');
 
     const user = await userRes.json();
-    console.log('OAuth success - user ID:', user.id);
-
     sessions.set(user.id, user);
-    res.cookie('auth_uid', user.id, {
-      httpOnly: true,
-      secure: true,
-      sameSite: 'strict',
-      maxAge: 24 * 60 * 60 * 1000
-    });
+    res.cookie('auth_uid', user.id, { httpOnly: true, secure: true, sameSite: 'strict', maxAge: 86400000 });
 
     res.redirect(`/?uid=${user.id}`);
   } catch (err) {
-    console.error('OAuth callback error:', err);
-    res.status(500).send('Login error. Please try again or contact support.');
+    console.error('OAuth error:', err);
+    res.status(500).send('Login error.');
   }
 });
 
@@ -644,49 +629,67 @@ app.post('/apply', async (req, res) => {
     const uidFromForm = req.body.uid;
     const uidFromCookie = req.cookies.auth_uid;
 
-    console.log('[/apply] POST received');
-    console.log('Form uid:', uidFromForm || 'undefined');
-    console.log('Cookie uid:', uidFromCookie || 'undefined');
-
-    if (!uidFromCookie) {
-      console.log('No cookie uid — session missing');
-      return res.status(401).send('Session expired. Please log in again.');
+    if (!uidFromCookie || (uidFromForm && uidFromForm !== uidFromCookie)) {
+      return res.status(401).send('Session invalid.');
     }
 
-    if (uidFromForm && uidFromForm !== uidFromCookie) {
-      console.log('uid mismatch');
-      return res.status(401).send('Session mismatch. Please log in again.');
-    }
+    const user = sessions.get(uidFromCookie);
+    if (!user) return res.status(401).send('Session expired.');
 
-    const effectiveUid = uidFromCookie;
+    const { 
+      app_type = 'discord',
+      email,
+      age,
+      timezone,
+      tiktok_username,
+      tiktok_url,
+      experience,
+      reason 
+    } = req.body;
 
-    const user = sessions.get(effectiveUid);
-    if (!user) {
-      console.log('No user in session for uid:', effectiveUid);
-      return res.status(401).send('Session expired. Please log in again.');
-    }
-
-    console.log('User authenticated:', user.username, user.id);
-
-    const { age, timezone, experience, reason } = req.body;
+    const queryParams = [
+      user.username,
+      user.id,
+      app_type,
+      email,
+      age,
+      timezone,
+      tiktok_username || null,
+      tiktok_url || null,
+      experience,
+      reason
+    ];
 
     const r = await pool.query(
-      `INSERT INTO mod_apps(username, user_id, age, timezone, experience, reason)
-       VALUES($1, $2, $3, $4, $5, $6) RETURNING id`,
-      [user.username, user.id, age, timezone, experience, reason]
+      `INSERT INTO mod_apps (
+        username, user_id, app_type, email, age, timezone, tiktok_username, tiktok_url, experience, reason
+      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10) RETURNING id`,
+      queryParams
     );
 
     const embed = new EmbedBuilder()
       .setTitle('📋 Staff Application')
       .setColor(0x5865F2)
       .addFields(
-        { name: 'User', value: `${user.username} (${user.id})` },
+        { name: 'User', value: `${user.username} (${user.id})`, inline: false },
+        { name: 'Type', value: app_type === 'discord' ? 'Discord Moderator' : 'TikTok Moderator', inline: true },
+        { name: 'Email', value: email || '—', inline: true },
         { name: 'Age', value: age || '—', inline: true },
-        { name: 'Timezone', value: timezone || '—', inline: true },
-        { name: 'Experience', value: experience || 'None' },
-        { name: 'Reason', value: reason || 'No reason provided' },
-        { name: 'Status', value: '⏳ Pending' }
+        { name: 'Timezone', value: timezone || '—', inline: true }
       );
+
+    if (app_type === 'tiktok') {
+      embed.addFields(
+        { name: 'TikTok Username', value: tiktok_username || '—', inline: true },
+        { name: 'TikTok URL', value: tiktok_url || '—', inline: true }
+      );
+    }
+
+    embed.addFields(
+      { name: 'Experience', value: experience || 'None' },
+      { name: 'Reason', value: reason || 'No reason provided' },
+      { name: 'Status', value: '⏳ Pending' }
+    );
 
     const row = new ActionRowBuilder().addComponents(
       new ButtonBuilder().setCustomId(`approve_${r.rows[0].id}`).setLabel('Approve').setStyle(ButtonStyle.Success),
