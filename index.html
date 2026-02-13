@@ -59,26 +59,83 @@
   </div>
 </section>
 
-<section id="staff" class="section hidden px-6 py-20 max-w-xl mx-auto">
-  <h2 class="text-4xl font-bold mb-6 text-center">Apply for Staff</h2>
+<section id="staff" class="section hidden px-6 py-20 max-w-3xl mx-auto">
+  <h2 class="text-4xl font-bold mb-8 text-center">Staff Applications</h2>
 
-  <div id="loginBox" class="text-center">
-    <a href="/auth/discord"
-       class="bg-indigo-600 px-8 py-4 rounded-xl inline-block font-bold">
-      Login with Discord
-    </a>
+  <!-- Choose application type -->
+  <div id="appTypeSelect" class="text-center space-y-6 mb-10">
+    <p class="text-xl text-zinc-300">Which position are you applying for?</p>
+    <div class="flex flex-col sm:flex-row justify-center gap-6">
+      <button onclick="showForm('discord')" 
+              class="bg-indigo-600 hover:bg-indigo-700 px-8 py-4 rounded-xl font-bold text-lg transition">
+        Apply for Discord Mod
+      </button>
+      <button onclick="showForm('tiktok')" 
+              class="bg-purple-600 hover:bg-purple-700 px-8 py-4 rounded-xl font-bold text-lg transition">
+        Apply for TikTok Mod
+      </button>
+    </div>
   </div>
 
-  <form id="appForm" class="hidden space-y-5 mt-10">
-    <input name="age" placeholder="Age" class="w-full p-3 bg-zinc-900 rounded-xl" required>
-    <input name="timezone" placeholder="Timezone" class="w-full p-3 bg-zinc-900 rounded-xl" required>
-    <textarea name="experience" placeholder="Staff experience" class="w-full p-3 bg-zinc-900 rounded-xl" required></textarea>
-    <textarea name="reason" placeholder="Why should we accept you?" class="w-full p-3 bg-zinc-900 rounded-xl" required></textarea>
-    <button type="submit" class="bg-green-600 px-6 py-3 rounded-xl font-bold w-full">Submit</button>
-  </form>
+  <!-- Discord Mod Form -->
+  <div id="discordForm" class="hidden">
+    <h3 class="text-2xl font-bold mb-6 text-center">Discord Moderator Application</h3>
+    <div id="loginBoxDiscord" class="text-center mb-8">
+      <a href="/auth/discord"
+         class="bg-indigo-600 px-8 py-4 rounded-xl inline-block font-bold hover:bg-indigo-700 transition">
+        Login with Discord to Apply
+      </a>
+    </div>
 
-  <div id="done" class="hidden text-green-400 font-bold text-center mt-8">
-    ✅ Application submitted. You may close this page.
+    <form id="discordAppForm" class="hidden space-y-5">
+      <input type="email" name="email" placeholder="Your Email (we will contact you regarding your application results)" 
+             class="w-full p-3 bg-zinc-900 rounded-xl" required>
+      <input name="age" placeholder="Age" class="w-full p-3 bg-zinc-900 rounded-xl" required>
+      <input name="timezone" placeholder="Timezone" class="w-full p-3 bg-zinc-900 rounded-xl" required>
+      <textarea name="experience" placeholder="Previous staff / moderation experience" 
+                class="w-full p-3 bg-zinc-900 rounded-xl h-32" required></textarea>
+      <textarea name="reason" placeholder="Why do you want to be a Discord Moderator?" 
+                class="w-full p-3 bg-zinc-900 rounded-xl h-32" required></textarea>
+      <input type="hidden" name="app_type" value="discord">
+      <button type="submit" class="bg-green-600 px-6 py-3 rounded-xl font-bold w-full hover:bg-green-700 transition">
+        Submit Discord Application
+      </button>
+    </form>
+  </div>
+
+  <!-- TikTok Mod Form -->
+  <div id="tiktokForm" class="hidden">
+    <h3 class="text-2xl font-bold mb-6 text-center">TikTok Moderator Application</h3>
+    <div id="loginBoxTiktok" class="text-center mb-8">
+      <a href="/auth/discord"
+         class="bg-indigo-600 px-8 py-4 rounded-xl inline-block font-bold hover:bg-indigo-700 transition">
+        Login with Discord to Apply
+      </a>
+    </div>
+
+    <form id="tiktokAppForm" class="hidden space-y-5">
+      <input type="email" name="email" placeholder="Your Email (we will contact you regarding your application results)" 
+             class="w-full p-3 bg-zinc-900 rounded-xl" required>
+      <input name="tiktok_username" placeholder="Your TikTok Username" 
+             class="w-full p-3 bg-zinc-900 rounded-xl" required>
+      <input name="tiktok_url" placeholder="TikTok Channel URL (optional - helps us find your channel faster)" 
+             class="w-full p-3 bg-zinc-900 rounded-xl">
+      <input name="age" placeholder="Age" class="w-full p-3 bg-zinc-900 rounded-xl" required>
+      <input name="timezone" placeholder="Timezone" class="w-full p-3 bg-zinc-900 rounded-xl" required>
+      <textarea name="experience" placeholder="Previous moderation / content experience" 
+                class="w-full p-3 bg-zinc-900 rounded-xl h-32" required></textarea>
+      <textarea name="reason" placeholder="Why do you want to be a TikTok Moderator?" 
+                class="w-full p-3 bg-zinc-900 rounded-xl h-32" required></textarea>
+      <input type="hidden" name="app_type" value="tiktok">
+      <button type="submit" class="bg-green-600 px-6 py-3 rounded-xl font-bold w-full hover:bg-green-700 transition">
+        Submit TikTok Application
+      </button>
+    </form>
+  </div>
+
+  <!-- Success message (shared) -->
+  <div id="done" class="hidden text-green-400 font-bold text-center mt-8 text-xl">
+    ✅ Application submitted successfully! We'll review it soon.
   </div>
 </section>
 
@@ -86,11 +143,18 @@
 
 <script>
 function show(id){
-  document.querySelectorAll('.section').forEach(s=>s.classList.add('hidden'))
-  document.getElementById(id).classList.remove('hidden')
+  document.querySelectorAll('.section').forEach(s=>s.classList.add('hidden'));
+  document.getElementById(id).classList.remove('hidden');
 }
 
-let uid = new URLSearchParams(window.location.search).get('uid')
+function showForm(type) {
+  document.getElementById('appTypeSelect').classList.add('hidden');
+  document.getElementById('discordForm').classList.add('hidden');
+  document.getElementById('tiktokForm').classList.add('hidden');
+  document.getElementById(type + 'Form').classList.remove('hidden');
+}
+
+let uid = new URLSearchParams(window.location.search).get('uid');
 
 if (!uid) {
   function getCookie(name) {
@@ -104,39 +168,45 @@ if (!uid) {
 console.log('Loaded uid:', uid || 'MISSING');
 
 if (uid) {
-  document.getElementById('loginBox')?.classList.add('hidden')
-  const form = document.getElementById('appForm');
-  if (form) {
-    form.classList.remove('hidden');
-    
-    const hidden = document.createElement('input');
-    hidden.type = 'hidden';
-    hidden.name = 'uid';
-    hidden.value = uid;
-    form.appendChild(hidden);
-    
-    console.log('Hidden uid added:', uid);
-  }
+  document.getElementById('loginBoxDiscord')?.classList.add('hidden');
+  document.getElementById('loginBoxTiktok')?.classList.add('hidden');
 }
 
-document.getElementById('appForm')?.addEventListener('submit', async e => {
-  e.preventDefault()
-  const fd = new FormData(e.target)
-  fd.append('uid', uid)
-  try {
-    const r = await fetch('/apply', { method: 'POST', body: fd })
-    console.log('Apply status:', r.status)
-    if (r.ok) {
-      document.getElementById('appForm').classList.add('hidden')
-      document.getElementById('done').classList.remove('hidden')
-    } else {
-      alert('Submission failed: ' + r.status)
+const forms = ['discordAppForm', 'tiktokAppForm'];
+
+forms.forEach(formId => {
+  const form = document.getElementById(formId);
+  if (form) {
+    if (uid) {
+      const hidden = document.createElement('input');
+      hidden.type = 'hidden';
+      hidden.name = 'uid';
+      hidden.value = uid;
+      form.appendChild(hidden);
     }
-  } catch (err) {
-    console.error('Fetch error:', err)
-    alert('Network error')
+
+    form.addEventListener('submit', async e => {
+      e.preventDefault();
+      const fd = new FormData(e.target);
+      fd.append('uid', uid || '');
+
+      try {
+        const r = await fetch('/apply', { method: 'POST', body: fd });
+        console.log('Apply status:', r.status);
+        if (r.ok) {
+          document.getElementById('discordForm').classList.add('hidden');
+          document.getElementById('tiktokForm').classList.add('hidden');
+          document.getElementById('done').classList.remove('hidden');
+        } else {
+          alert('Submission failed: ' + r.status);
+        }
+      } catch (err) {
+        console.error('Fetch error:', err);
+        alert('Network error');
+      }
+    });
   }
-})
+});
 </script>
 
 </body>
