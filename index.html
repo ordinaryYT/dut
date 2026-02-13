@@ -29,12 +29,12 @@
     <h1 class="text-6xl font-extrabold">
       THE<span class="text-indigo-500">BIG</span>DUTZ
     </h1>
-    <p class="text-zinc-400 mt-6">Fortnite • TikTok • Live Streaming</p>
+    <p class="text-zinc-400 mt-6">Live Streaming & Community</p>
   </div>
 </section>
 
 <section id="clips" class="section hidden px-6 py-20">
-  <h2 class="text-4xl font-bold mb-10">🔥 Best Fortnite Clips</h2>
+  <h2 class="text-4xl font-bold mb-10">🔥 Best Clips</h2>
   <div id="clipsGrid" class="grid md:grid-cols-3 gap-8">
     <blockquote class="tiktok-embed" cite="https://www.tiktok.com/@thebigdutz/video/7599742111117872406" data-video-id="7599742111117872406" style="max-width: 605px;min-width: 325px;">
       <section>
@@ -160,14 +160,10 @@ if (!uid) {
 
 console.log('Loaded uid:', uid || 'MISSING');
 
-// Show form automatically after login redirect
+// Auto-show Discord form after login redirect
 if (uid) {
-  // If coming from login redirect, auto-show Discord form
   showForm('discord');
   document.getElementById('loginBoxDiscord')?.classList.add('hidden');
-  document.getElementById('discordAppForm')?.classList.remove('hidden');
-
-  // Add hidden uid to Discord form only
   const discordForm = document.getElementById('discordAppForm');
   if (discordForm) {
     const hidden = document.createElement('input');
@@ -175,10 +171,11 @@ if (uid) {
     hidden.name = 'uid';
     hidden.value = uid;
     discordForm.appendChild(hidden);
+    discordForm.classList.remove('hidden');
   }
 }
 
-// Handle form submissions
+// Form submissions
 ['discordAppForm', 'tiktokAppForm'].forEach(formId => {
   const form = document.getElementById(formId);
   if (form) {
