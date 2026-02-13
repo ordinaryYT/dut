@@ -58,13 +58,20 @@ const pool = new Pool({
     `);
 
     await pool.query(`
-      ALTER TABLE giveaways ADD COLUMN IF NOT EXISTS winners INT DEFAULT 1;
-      ALTER TABLE giveaways ADD COLUMN IF NOT EXISTS min_join INT DEFAULT 0;
+      ALTER TABLE mod_apps
+      ADD COLUMN IF NOT EXISTS age TEXT,
+      ADD COLUMN IF NOT EXISTS timezone TEXT,
+      ADD COLUMN IF NOT EXISTS experience TEXT,
+      ADD COLUMN IF NOT EXISTS reason TEXT;
+
+      ALTER TABLE giveaways
+      ADD COLUMN IF NOT EXISTS winners INT DEFAULT 1,
+      ADD COLUMN IF NOT EXISTS min_join INT DEFAULT 0;
     `);
 
-    console.log('Database ready');
+    console.log('Database tables and columns ready');
   } catch (err) {
-    console.error('Database setup failed:', err);
+    console.error('Database setup/migration failed:', err);
   }
 })();
 
@@ -505,7 +512,7 @@ Fifth Warning — Permanent Ban
   }
 });
 
-/* ================= REACTION HANDLER ================= */
+/* ================= REACTION HANDLER (give role + ping Render) ================= */
 client.on('messageReactionAdd', async (reaction, user) => {
   if (user.bot) return;
   if (reaction.partial) try { await reaction.fetch(); } catch { return; }
@@ -520,31 +527,38 @@ client.on('messageReactionAdd', async (reaction, user) => {
 
       // Give verified role
       await member.roles.add(process.env.VERIFIED_ROLE_ID).catch(err => {
-        console.error('Role add failed:', err);
+        console.error('Failed to add role:', err);
       });
 
-      // Ping Render to keep alive (once per reaction)
+      // Ping Render to keep instance awake
       fetch('https://thebigdutz.qzz.io/ping')
         .then(r => console.log('Pinged Render to stay awake'))
         .catch(err => console.error('Render ping failed:', err));
 
-      // Ephemeral confirmation
+      // Ephemeral confirmation visible only to the user
       await reaction.message.channel.send({
         content: `<@${user.id}> You have been verified!`,
-        flags: 64
+        flags: 64 // Ephemeral
       });
 
-      console.log(`Verified ${user.tag} - gave role`);
+      console.log(`Verified ${user.tag} - gave role ${process.env.VERIFIED_ROLE_ID}`);
     } catch (err) {
       console.error('Verification error:', err);
     }
   }
 });
 
-/* ================= SIMPLE PING ROUTE TO KEEP RENDER ALIVE ================= */
+/* ================= KEEP RENDER ALIVE ENDPOINT ================= */
 app.get('/ping', (req, res) => {
-  res.send('Pong - Render kept alive');
+  res.send('Pong - Render instance kept alive');
 });
+
+/* ================= AUTO-PING ITSELF EVERY 1 MINUTE ================= */
+setInterval(() => {
+  fetch('https://thebigdutz.qzz.io/ping')
+    .then(r => console.log('Auto-pinged self (every 1 min)'))
+    .catch(err => console.error('Self-ping failed:', err));
+}, 1 * 60 * 1000); // 1 minute = 60 seconds
 
 /* ================= WEBSITE ROUTES ================= */
 const sessions = new Map();
