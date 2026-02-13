@@ -77,11 +77,11 @@
     </div>
   </div>
 
-  <!-- Discord Mod Form -->
+  <!-- Discord Mod Form (requires login) -->
   <div id="discordForm" class="hidden">
     <h3 class="text-2xl font-bold mb-6 text-center">Discord Moderator Application</h3>
     <div id="loginBoxDiscord" class="text-center mb-8">
-      <a href="/auth/discord"
+      <a href="/auth/discord?redirect=/staff"
          class="bg-indigo-600 px-8 py-4 rounded-xl inline-block font-bold hover:bg-indigo-700 transition">
         Login with Discord to Apply
       </a>
@@ -103,17 +103,10 @@
     </form>
   </div>
 
-  <!-- TikTok Mod Form -->
+  <!-- TikTok Mod Form (no login required) -->
   <div id="tiktokForm" class="hidden">
     <h3 class="text-2xl font-bold mb-6 text-center">TikTok Moderator Application</h3>
-    <div id="loginBoxTiktok" class="text-center mb-8">
-      <a href="/auth/discord"
-         class="bg-indigo-600 px-8 py-4 rounded-xl inline-block font-bold hover:bg-indigo-700 transition">
-        Login with Discord to Apply
-      </a>
-    </div>
-
-    <form id="tiktokAppForm" class="hidden space-y-5">
+    <form id="tiktokAppForm" class="space-y-5">
       <input type="email" name="email" placeholder="Your Email (we will contact you regarding your application results)" 
              class="w-full p-3 bg-zinc-900 rounded-xl" required>
       <input name="tiktok_username" placeholder="Your TikTok Username" 
@@ -133,7 +126,7 @@
     </form>
   </div>
 
-  <!-- Success message (shared) -->
+  <!-- Success message -->
   <div id="done" class="hidden text-green-400 font-bold text-center mt-8 text-xl">
     ✅ Application submitted successfully! We'll review it soon.
   </div>
@@ -167,28 +160,31 @@ if (!uid) {
 
 console.log('Loaded uid:', uid || 'MISSING');
 
+// Show form automatically after login redirect
 if (uid) {
+  // If coming from login redirect, auto-show Discord form
+  showForm('discord');
   document.getElementById('loginBoxDiscord')?.classList.add('hidden');
-  document.getElementById('loginBoxTiktok')?.classList.add('hidden');
+  document.getElementById('discordAppForm')?.classList.remove('hidden');
+
+  // Add hidden uid to Discord form only
+  const discordForm = document.getElementById('discordAppForm');
+  if (discordForm) {
+    const hidden = document.createElement('input');
+    hidden.type = 'hidden';
+    hidden.name = 'uid';
+    hidden.value = uid;
+    discordForm.appendChild(hidden);
+  }
 }
 
-const forms = ['discordAppForm', 'tiktokAppForm'];
-
-forms.forEach(formId => {
+// Handle form submissions
+['discordAppForm', 'tiktokAppForm'].forEach(formId => {
   const form = document.getElementById(formId);
   if (form) {
-    if (uid) {
-      const hidden = document.createElement('input');
-      hidden.type = 'hidden';
-      hidden.name = 'uid';
-      hidden.value = uid;
-      form.appendChild(hidden);
-    }
-
     form.addEventListener('submit', async e => {
       e.preventDefault();
       const fd = new FormData(e.target);
-      fd.append('uid', uid || '');
 
       try {
         const r = await fetch('/apply', { method: 'POST', body: fd });
@@ -196,6 +192,7 @@ forms.forEach(formId => {
         if (r.ok) {
           document.getElementById('discordForm').classList.add('hidden');
           document.getElementById('tiktokForm').classList.add('hidden');
+          document.getElementById('appTypeSelect').classList.add('hidden');
           document.getElementById('done').classList.remove('hidden');
         } else {
           alert('Submission failed: ' + r.status);
