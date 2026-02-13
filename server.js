@@ -61,21 +61,27 @@ const pool = new Pool({
       );
     `);
 
+    // Ensure all columns exist (including status)
     await pool.query(`
       ALTER TABLE mod_apps
       ADD COLUMN IF NOT EXISTS app_type TEXT DEFAULT 'discord',
       ADD COLUMN IF NOT EXISTS email TEXT,
       ADD COLUMN IF NOT EXISTS tiktok_username TEXT,
-      ADD COLUMN IF NOT EXISTS tiktok_url TEXT;
+      ADD COLUMN IF NOT EXISTS tiktok_url TEXT,
+      ADD COLUMN IF NOT EXISTS age TEXT,
+      ADD COLUMN IF NOT EXISTS timezone TEXT,
+      ADD COLUMN IF NOT EXISTS experience TEXT,
+      ADD COLUMN IF NOT EXISTS reason TEXT,
+      ADD COLUMN IF NOT EXISTS status TEXT DEFAULT 'Pending';
 
       ALTER TABLE giveaways
       ADD COLUMN IF NOT EXISTS winners INT DEFAULT 1,
       ADD COLUMN IF NOT EXISTS min_join INT DEFAULT 0;
     `);
 
-    console.log('Database ready');
+    console.log('Database tables and columns ready (including status)');
   } catch (err) {
-    console.error('Database setup failed:', err);
+    console.error('Database setup/migration failed:', err);
   }
 })();
 
@@ -248,15 +254,21 @@ client.on('interactionCreate', async interaction => {
 
     // ===== STAFF APPROVE/DENY BUTTONS =====
     if (interaction.isButton() && (interaction.customId.startsWith('approve_') || interaction.customId.startsWith('deny_'))) {
-      if (!allowed(interaction.member)) return interaction.reply({ content: 'Only staff can use these buttons.', ephemeral: true });
+      if (!allowed(interaction.member)) {
+        return interaction.reply({ content: 'Only staff can use these buttons.', ephemeral: true });
+      }
 
       const [action, appId] = interaction.customId.split('_');
       const { rows } = await pool.query(`SELECT * FROM mod_apps WHERE id = $1`, [appId]);
-      if (!rows.length) return interaction.reply({ content: 'Application not found.', ephemeral: true });
+
+      if (!rows.length) {
+        console.warn(`Approve/Deny failed: App ID ${appId} not found`);
+        return interaction.reply({ content: 'Application not found.', ephemeral: true });
+      }
 
       const app = rows[0];
 
-      // Rebuild embed completely to ensure all fields show
+      // Rebuild embed completely
       const embed = new EmbedBuilder()
         .setTitle('📋 Staff Application')
         .setColor(0x5865F2)
@@ -281,33 +293,187 @@ client.on('interactionCreate', async interaction => {
         { name: 'Status', value: action === 'approve' ? '✅ Approved' : '❌ Denied' }
       );
 
+      // Approve role logic
       if (action === 'approve') {
         const guild = await client.guilds.fetch(process.env.GUILD_ID).catch(() => null);
         if (guild && app.user_id) {
           const member = await guild.members.fetch(app.user_id).catch(() => null);
           if (member) {
-            await member.roles.add(process.env.STAFF_ROLE_ID).catch(err => console.error('Role add failed:', err));
+            await member.roles.add(process.env.STAFF_ROLE_ID).catch(err => {
+              console.error('Failed to add staff role:', err);
+            });
           }
         }
       }
 
-      await pool.query(`UPDATE mod_apps SET status = $1 WHERE id = $2`, [
-        action === 'approve' ? 'Approved' : 'Denied',
-        appId
-      ]);
+      // Update status in DB
+      try {
+        await pool.query(`UPDATE mod_apps SET status = $1 WHERE id = $2`, [
+          action === 'approve' ? 'Approved' : 'Denied',
+          appId
+        ]);
+        console.log(`Updated app ${appId} status to ${action === 'approve' ? 'Approved' : 'Denied'}`);
+      } catch (dbErr) {
+        console.error('Failed to update status in DB:', dbErr);
+        return interaction.reply({ content: 'Failed to update application status.', ephemeral: true });
+      }
 
       await interaction.update({ embeds: [embed], components: [] });
       return;
     }
 
-    // Slash commands (unchanged for brevity - copy from previous if needed)
+    // Slash commands (unchanged)
     if (interaction.isChatInputCommand()) {
-      // ... your ban, unban, revoke, giveaway logic here ...
+      if (!allowed(interaction.member)) {
+        return interaction.reply({ content: 'You are not staff.', flags: 64 });
+      }
+
+      await interaction.deferReply({ flags: 64 });
+
+      const cmd = interaction.commandName;
+
+      if (cmd === 'ban') {
+        const user = interaction.options.getUser('user');
+        const member = await interaction.guild.members.fetch(user.id).catch(() => null);
+        if (!member) return interaction.editReply({ content: 'User not found in server.', flags: 64 });
+
+        await pool.query(
+          `INSERT INTO warnings(user_id, count) VALUES($1, 5)
+           ON CONFLICT (user_id) DO UPDATE SET count = 5`,
+          [member.id]
+        );
+
+        await member.roles.add(process.env.WEEK_BAN_ROLE_ID).catch(() => {});
+        const log = interaction.guild.channels.cache.get(process.env.STAFF_LOG_CHANNEL_ID);
+        if (log) await log.send(`${member} reached 5 warnings — review for permanent ban`);
+
+        await interaction.editReply({ content: `✅ ${member} flagged for permanent ban review (warnings set to 5).`, flags: 64 });
+      }
+
+      else if (cmd === 'unban') {
+        const user = interaction.options.getUser('user');
+        const member = await interaction.guild.members.fetch(user.id).catch(() => null);
+        if (!member) return interaction.editReply({ content: 'User not found in server.', flags: 64 });
+
+        await member.roles.remove(process.env.WEEK_BAN_ROLE_ID).catch(() => {});
+        await interaction.editReply({ content: `✅ Removed ban review role from ${member}. Warnings unchanged.`, flags: 64 });
+      }
+
+      else if (cmd === 'revoke') {
+        const user = interaction.options.getUser('user');
+        const amount = interaction.options.getInteger('amount') ?? 1;
+
+        if (amount < 1) return interaction.editReply({ content: 'Amount must be at least 1.', flags: 64 });
+
+        const member = await interaction.guild.members.fetch(user.id).catch(() => null);
+        if (!member) return interaction.editReply({ content: 'User not found in server.', flags: 64 });
+
+        const res = await pool.query(
+          `UPDATE warnings SET count = GREATEST(count - $1, 0) WHERE user_id = $2 RETURNING count`,
+          [amount, member.id]
+        );
+
+        const newCount = res.rows[0] ? res.rows[0].count : 0;
+
+        const log = interaction.guild.channels.cache.get(process.env.STAFF_LOG_CHANNEL_ID);
+        if (log) await log.send(`${interaction.user} removed **${amount}** warning(s) from ${member} → now at ${newCount}`);
+
+        await interaction.editReply({ content: `✅ Removed **${amount}** warning(s) from ${member}. New total: **${newCount}**`, flags: 64 });
+      }
+
+      else if (cmd === 'giveaway') {
+        const sub = interaction.options.getSubcommand(false);
+
+        if (!sub) {
+          return interaction.editReply({
+            content: 'Please select a subcommand: `start` or `end`.',
+            flags: 64
+          });
+        }
+
+        if (sub === 'start') {
+          const prize = interaction.options.getString('prize', true);
+          const winners = interaction.options.getInteger('winners') ?? 1;
+          const minJoin = interaction.options.getInteger('min_join') ?? 0;
+
+          if (winners < 1 || winners > 10) {
+            return interaction.editReply({ content: 'Winners must be 1–10.', flags: 64 });
+          }
+          if (minJoin < 0 || minJoin > 1000) {
+            return interaction.editReply({ content: 'Min join must be 0–1000.', flags: 64 });
+          }
+
+          let description = `**Prize:** ${prize}\n**Winners:** ${winners}\n\n**React with 🎉 to enter!**\nGood luck!`;
+
+          let endTime = null;
+          if (minJoin === 0) {
+            const duration = interaction.options.getInteger('duration', true);
+            if (!duration || duration < 1 || duration > 10080) {
+              return interaction.editReply({ content: 'Duration (1–10080 min) required when min_join = 0.', flags: 64 });
+            }
+            endTime = Date.now() + duration * 60 * 1000;
+            description += `\n**Ends:** <t:${Math.floor(endTime/1000)}:R>`;
+          } else {
+            description += `\n**Ends when ${minJoin} people join**`;
+          }
+
+          const embed = new EmbedBuilder()
+            .setTitle('🎉 GIVEAWAY 🎉')
+            .setDescription(description)
+            .setColor(0x00ff88)
+            .setFooter({ text: `Hosted by ${interaction.user.tag}` });
+
+          const msg = await interaction.channel.send({ embeds: [embed] });
+          await msg.react('🎉').catch(() => {});
+
+          await pool.query(
+            `INSERT INTO giveaways (message_id, channel_id, end_time, prize, winners, min_join)
+             VALUES ($1, $2, $3, $4, $5, $6)`,
+            [msg.id, interaction.channel.id, endTime, prize, winners, minJoin]
+          );
+
+          await interaction.editReply({ content: `Giveaway started → ${msg.url}`, flags: 64 });
+        }
+
+        else if (sub === 'end') {
+          const msgId = interaction.options.getString('message_id', true);
+
+          const { rows } = await pool.query(`SELECT * FROM giveaways WHERE message_id = $1`, [msgId]);
+          if (!rows.length) return interaction.editReply({ content: 'No active giveaway with that message ID.', flags: 64 });
+
+          const gw = rows[0];
+          const ch = await client.channels.fetch(gw.channel_id).catch(() => null);
+          if (!ch) return interaction.editReply({ content: 'Channel not found.', flags: 64 });
+
+          const msg = await ch.messages.fetch(msgId).catch(() => null);
+          if (!msg) return interaction.editReply({ content: 'Giveaway message not found.', flags: 64 });
+
+          const entrants = await getEntrantCount(msg);
+          const winnersList = await pickWinners(msg, gw.winners);
+          const winnerText = winnersList.length ? winnersList.map(u => u.toString()).join(', ') : 'No one entered 😢';
+
+          const endEmbed = EmbedBuilder.from(msg.embeds[0])
+            .setTitle('🎉 GIVEAWAY FORCE ENDED 🎉')
+            .setDescription(`**Prize:** ${gw.prize}\n**Winners:** ${winnerText}\n**Entrants:** ${entrants}`)
+            .setColor(0xff5555);
+
+          await msg.edit({ embeds: [endEmbed] });
+
+          if (winnersList.length) {
+            await ch.send(`Congratulations ${winnerText}! You won **${gw.prize}** (force ended)!`);
+          } else {
+            await ch.send(`Giveaway force ended — no winners.`);
+          }
+
+          await pool.query(`DELETE FROM giveaways WHERE message_id = $1`, [msgId]);
+          await interaction.editReply({ content: 'Giveaway ended early.', flags: 64 });
+        }
+      }
     }
   } catch (err) {
     console.error('Interaction error:', err);
     if (!interaction.replied && !interaction.deferred) {
-      await interaction.reply({ content: 'Something went wrong.', ephemeral: true }).catch(() => {});
+      await interaction.reply({ content: 'Something went wrong.', flags: 64 }).catch(() => {});
     }
   }
 });
