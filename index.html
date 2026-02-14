@@ -29,13 +29,13 @@
     <h1 class="text-6xl font-extrabold">
       THE<span class="text-indigo-500">BIG</span>DUTZ
     </h1>
-    <p class="text-zinc-400 mt-6">Live Streaming & Community</p>
+    <p class="text-zinc-400 mt-6"></p>
   </div>
 </section>
 
 <section id="clips" class="section hidden px-6 py-20">
   <h2 class="text-4xl font-bold mb-10">🔥 Best Clips</h2>
-  <div id="clipsGrid" class="grid md:grid-cols-3 gap-8">
+  <div class="grid md:grid-cols-3 gap-8">
     <blockquote class="tiktok-embed" cite="https://www.tiktok.com/@thebigdutz/video/7599742111117872406" data-video-id="7599742111117872406" style="max-width: 605px;min-width: 325px;">
       <section>
         <a target="_blank" title="@thebigdutz" href="https://www.tiktok.com/@thebigdutz?refer=embed">@thebigdutz</a>
@@ -43,12 +43,13 @@
         <a target="_blank" title="♬ original sound - TheBigDutz" href="https://www.tiktok.com/music/original-sound-TheBigDutz-7599742121465514774?refer=embed">♬ original sound - TheBigDutz</a>
       </section>
     </blockquote>
+    <!-- Add more clip embeds here if needed -->
   </div>
 </section>
 
 <section id="gifters" class="section hidden px-6 py-20">
   <h2 class="text-4xl font-bold mb-10">🏆 Top Gifter Clips</h2>
-  <div id="giftersGrid" class="grid md:grid-cols-3 gap-8">
+  <div class="grid md:grid-cols-3 gap-8">
     <blockquote class="tiktok-embed" cite="https://www.tiktok.com/@thebigdutz/video/7599770469356670230" data-video-id="7599770469356670230" style="max-width: 605px;min-width: 325px;">
       <section>
         <a target="_blank" title="@thebigdutz" href="https://www.tiktok.com/@thebigdutz?refer=embed">@thebigdutz</a>
@@ -56,46 +57,39 @@
         <a target="_blank" title="♬ original sound - TheBigDutz" href="https://www.tiktok.com/music/original-sound-TheBigDutz-7599770487438215958?refer=embed">♬ original sound - TheBigDutz</a>
       </section>
     </blockquote>
+    <!-- Add more gifter embeds here if needed -->
   </div>
 </section>
 
-<section id="staff" class="section hidden px-6 py-20 max-w-3xl mx-auto">
-  <h2 class="text-4xl font-bold mb-8 text-center">Staff Applications</h2>
+<section id="staff" class="section hidden px-6 py-20 max-w-4xl mx-auto">
+  <h2 class="text-4xl font-bold mb-8 text-center">Staff Applications & Donate</h2>
 
-  <!-- Choose application type -->
   <div id="appTypeSelect" class="text-center space-y-6 mb-10">
-    <p class="text-xl text-zinc-300">Which position are you applying for?</p>
     <div class="flex flex-col sm:flex-row justify-center gap-6">
-      <button onclick="showForm('discord')" 
-              class="bg-indigo-600 hover:bg-indigo-700 px-8 py-4 rounded-xl font-bold text-lg transition">
+      <button onclick="showForm('discord')" class="bg-indigo-600 hover:bg-indigo-700 px-8 py-4 rounded-xl font-bold text-lg transition">
         Apply for Discord Mod
       </button>
-      <button onclick="showForm('tiktok')" 
-              class="bg-purple-600 hover:bg-purple-700 px-8 py-4 rounded-xl font-bold text-lg transition">
+      <button onclick="showForm('tiktok')" class="bg-purple-600 hover:bg-purple-700 px-8 py-4 rounded-xl font-bold text-lg transition">
         Apply for TikTok Mod
       </button>
     </div>
   </div>
 
-  <!-- Discord Mod Form (requires login) -->
+  <!-- Discord Mod Form -->
   <div id="discordForm" class="hidden">
     <h3 class="text-2xl font-bold mb-6 text-center">Discord Moderator Application</h3>
     <div id="loginBoxDiscord" class="text-center mb-8">
-      <a href="/auth/discord?redirect=/staff"
-         class="bg-indigo-600 px-8 py-4 rounded-xl inline-block font-bold hover:bg-indigo-700 transition">
+      <a href="/auth/discord?redirect=/staff" class="bg-indigo-600 px-8 py-4 rounded-xl inline-block font-bold hover:bg-indigo-700 transition">
         Login with Discord to Apply
       </a>
     </div>
 
     <form id="discordAppForm" class="hidden space-y-5">
-      <input type="email" name="email" placeholder="Your Email (we will contact you regarding your application results)" 
-             class="w-full p-3 bg-zinc-900 rounded-xl" required>
+      <input type="email" name="email" placeholder="Your Email (we will contact you regarding your application results)" class="w-full p-3 bg-zinc-900 rounded-xl" required>
       <input name="age" placeholder="Age" class="w-full p-3 bg-zinc-900 rounded-xl" required>
       <input name="timezone" placeholder="Timezone" class="w-full p-3 bg-zinc-900 rounded-xl" required>
-      <textarea name="experience" placeholder="Previous staff / moderation experience" 
-                class="w-full p-3 bg-zinc-900 rounded-xl h-32" required></textarea>
-      <textarea name="reason" placeholder="Why do you want to be a Discord Moderator?" 
-                class="w-full p-3 bg-zinc-900 rounded-xl h-32" required></textarea>
+      <textarea name="experience" placeholder="Previous staff / moderation experience" class="w-full p-3 bg-zinc-900 rounded-xl h-32" required></textarea>
+      <textarea name="reason" placeholder="Why do you want to be a Discord Moderator?" class="w-full p-3 bg-zinc-900 rounded-xl h-32" required></textarea>
       <input type="hidden" name="app_type" value="discord">
       <button type="submit" class="bg-green-600 px-6 py-3 rounded-xl font-bold w-full hover:bg-green-700 transition">
         Submit Discord Application
@@ -103,22 +97,17 @@
     </form>
   </div>
 
-  <!-- TikTok Mod Form (no login required) -->
+  <!-- TikTok Mod Form -->
   <div id="tiktokForm" class="hidden">
     <h3 class="text-2xl font-bold mb-6 text-center">TikTok Moderator Application</h3>
     <form id="tiktokAppForm" class="space-y-5">
-      <input type="email" name="email" placeholder="Your Email (we will contact you regarding your application results)" 
-             class="w-full p-3 bg-zinc-900 rounded-xl" required>
-      <input name="tiktok_username" placeholder="Your TikTok Username" 
-             class="w-full p-3 bg-zinc-900 rounded-xl" required>
-      <input name="tiktok_url" placeholder="TikTok Channel URL (optional - helps us find your channel faster)" 
-             class="w-full p-3 bg-zinc-900 rounded-xl">
+      <input type="email" name="email" placeholder="Your Email (we will contact you regarding your application results)" class="w-full p-3 bg-zinc-900 rounded-xl" required>
+      <input name="tiktok_username" placeholder="Your TikTok Username" class="w-full p-3 bg-zinc-900 rounded-xl" required>
+      <input name="tiktok_url" placeholder="TikTok Channel URL (optional - helps us find your channel faster)" class="w-full p-3 bg-zinc-900 rounded-xl">
       <input name="age" placeholder="Age" class="w-full p-3 bg-zinc-900 rounded-xl" required>
       <input name="timezone" placeholder="Timezone" class="w-full p-3 bg-zinc-900 rounded-xl" required>
-      <textarea name="experience" placeholder="Previous moderation / content experience" 
-                class="w-full p-3 bg-zinc-900 rounded-xl h-32" required></textarea>
-      <textarea name="reason" placeholder="Why do you want to be a TikTok Moderator?" 
-                class="w-full p-3 bg-zinc-900 rounded-xl h-32" required></textarea>
+      <textarea name="experience" placeholder="Previous moderation / content experience" class="w-full p-3 bg-zinc-900 rounded-xl h-32" required></textarea>
+      <textarea name="reason" placeholder="Why do you want to be a TikTok Moderator?" class="w-full p-3 bg-zinc-900 rounded-xl h-32" required></textarea>
       <input type="hidden" name="app_type" value="tiktok">
       <button type="submit" class="bg-green-600 px-6 py-3 rounded-xl font-bold w-full hover:bg-green-700 transition">
         Submit TikTok Application
@@ -129,6 +118,61 @@
   <!-- Success message -->
   <div id="done" class="hidden text-green-400 font-bold text-center mt-8 text-xl">
     ✅ Application submitted successfully! We'll review it soon.
+  </div>
+
+  <!-- Donate Section -->
+  <div class="mt-16">
+    <h3 class="text-3xl font-bold text-center mb-8 text-green-400">Support TheBigDutz</h3>
+    <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-8">
+      <!-- £1 -->
+      <div class="bg-zinc-900 p-6 rounded-xl border border-green-600/30 text-center">
+        <h4 class="text-2xl font-bold mb-4">£1 Donation</h4>
+        <div data-upgrade-chat-embed="a32cc51c-26aa-4e46-abdd-7c0f4acf3755" data-upgrade-chat-products="ce34153b-fe16-45e8-8553-3f68fcfecb01" data-upgrade-chat-baseurl="https://upgrade.chat"></div>
+        <script src="https://upgrade.chat/embed/embed.js"></script>
+      </div>
+
+      <!-- £5 -->
+      <div class="bg-zinc-900 p-6 rounded-xl border border-green-600/30 text-center">
+        <h4 class="text-2xl font-bold mb-4">£5 Donation</h4>
+        <div data-upgrade-chat-embed="a32cc51c-26aa-4e46-abdd-7c0f4acf3755" data-upgrade-chat-products="4a6ca5b9-ccac-4680-af7b-294c817469ee" data-upgrade-chat-baseurl="https://upgrade.chat"></div>
+        <script src="https://upgrade.chat/embed/embed.js"></script>
+      </div>
+
+      <!-- £10 -->
+      <div class="bg-zinc-900 p-6 rounded-xl border border-green-600/30 text-center">
+        <h4 class="text-2xl font-bold mb-4">£10 Donation</h4>
+        <div data-upgrade-chat-embed="a32cc51c-26aa-4e46-abdd-7c0f4acf3755" data-upgrade-chat-products="ecfbc908-aef4-4774-86cb-fb7a905a0123" data-upgrade-chat-baseurl="https://upgrade.chat"></div>
+        <script src="https://upgrade.chat/embed/embed.js"></script>
+      </div>
+
+      <!-- £20 -->
+      <div class="bg-zinc-900 p-6 rounded-xl border border-green-600/30 text-center">
+        <h4 class="text-2xl font-bold mb-4">£20 Donation</h4>
+        <div data-upgrade-chat-embed="a32cc51c-26aa-4e46-abdd-7c0f4acf3755" data-upgrade-chat-products="3e999e8e-83e5-4fcd-85da-effa5a3e0e11" data-upgrade-chat-baseurl="https://upgrade.chat"></div>
+        <script src="https://upgrade.chat/embed/embed.js"></script>
+      </div>
+
+      <!-- £40 -->
+      <div class="bg-zinc-900 p-6 rounded-xl border border-green-600/30 text-center">
+        <h4 class="text-2xl font-bold mb-4">£40 Donation</h4>
+        <div data-upgrade-chat-embed="a32cc51c-26aa-4e46-abdd-7c0f4acf3755" data-upgrade-chat-products="3d55a507-6d35-4ca9-be4b-3de7776e19ce" data-upgrade-chat-baseurl="https://upgrade.chat"></div>
+        <script src="https://upgrade.chat/embed/embed.js"></script>
+      </div>
+
+      <!-- £80 -->
+      <div class="bg-zinc-900 p-6 rounded-xl border border-green-600/30 text-center">
+        <h4 class="text-2xl font-bold mb-4">£80 Donation</h4>
+        <div data-upgrade-chat-embed="a32cc51c-26aa-4e46-abdd-7c0f4acf3755" data-upgrade-chat-products="737fe543-c48e-48dc-9860-2699ac7d9a19" data-upgrade-chat-baseurl="https://upgrade.chat"></div>
+        <script src="https://upgrade.chat/embed/embed.js"></script>
+      </div>
+
+      <!-- £100 -->
+      <div class="bg-zinc-900 p-6 rounded-xl border border-green-600/30 text-center">
+        <h4 class="text-2xl font-bold mb-4">£100 Donation</h4>
+        <div data-upgrade-chat-embed="a32cc51c-26aa-4e46-abdd-7c0f4acf3755" data-upgrade-chat-products="7f6e279f-8d9c-402c-a75f-939c25bec2f1" data-upgrade-chat-baseurl="https://upgrade.chat"></div>
+        <script src="https://upgrade.chat/embed/embed.js"></script>
+      </div>
+    </div>
   </div>
 </section>
 
@@ -160,7 +204,6 @@ if (!uid) {
 
 console.log('Loaded uid:', uid || 'MISSING');
 
-// Auto-show Discord form after login redirect
 if (uid) {
   showForm('discord');
   document.getElementById('loginBoxDiscord')?.classList.add('hidden');
@@ -175,14 +218,11 @@ if (uid) {
   }
 }
 
-// Form submissions (now send JSON)
 ['discordAppForm', 'tiktokAppForm'].forEach(formId => {
   const form = document.getElementById(formId);
   if (form) {
     form.addEventListener('submit', async e => {
       e.preventDefault();
-
-      // Convert FormData to plain object
       const formData = Object.fromEntries(new FormData(e.target).entries());
 
       try {
@@ -192,7 +232,6 @@ if (uid) {
           body: JSON.stringify(formData)
         });
 
-        console.log('Apply status:', r.status);
         if (r.ok) {
           document.getElementById('discordForm').classList.add('hidden');
           document.getElementById('tiktokForm').classList.add('hidden');
