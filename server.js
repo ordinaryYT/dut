@@ -232,6 +232,74 @@ No other text.
   }
 });
 
+/* ================= GIVEAWAY AUTO-END ON MIN JOIN ================= */
+client.on('messageReactionAdd', async (reaction, user) => {
+  if (user.bot) return;
+  if (reaction.emoji.name !== '🎉') return;
+
+  const message = reaction.message;
+  if (!message.guild) return;
+
+  const { rows } = await pool.query(`SELECT * FROM giveaways WHERE message_id = $1`, [message.id]);
+  if (!rows.length) return;
+
+  const gw = rows[0];
+  if (gw.min_join <= 0) return; // timed giveaways handled separately
+
+  // Get current entrants (non-bot users who reacted)
+  const reactionUsers = await reaction.users.fetch();
+  const entrants = reactionUsers.filter(u => !u.bot).size;
+
+  if (entrants >= gw.min_join) {
+    try {
+      // Pick winners
+      const winnersList = await pickWinners(message, gw.winners);
+      const winnerText = winnersList.length ? winnersList.map(u => u.toString()).join(', ') : 'No one entered 😢';
+
+      // Update embed
+      const endEmbed = EmbedBuilder.from(message.embeds[0])
+        .setTitle('🎉 GIVEAWAY ENDED 🎉 — Minimum reached!')
+        .setDescription(`**Prize:** ${gw.prize}\n**Winners:** ${winnerText}\n**Entrants:** ${entrants}`)
+        .setColor(0xff5555);
+
+      await message.edit({ embeds: [endEmbed] });
+
+      // Announce winners
+      if (winnersList.length) {
+        await message.channel.send(`Congratulations ${winnerText}! You won **${gw.prize}**!`);
+      } else {
+        await message.channel.send('Giveaway ended — no entrants.');
+      }
+
+      // Clean up DB
+      await pool.query(`DELETE FROM giveaways WHERE message_id = $1`, [message.id]);
+    } catch (err) {
+      console.error('Giveaway auto-end failed:', err);
+    }
+  }
+});
+
+/* ================= GIVEAWAY HELPERS ================= */
+async function getEntrantCount(message) {
+  const reaction = message.reactions.cache.get('🎉');
+  if (!reaction) return 0;
+  const users = await reaction.users.fetch();
+  return users.filter(u => !u.bot).size;
+}
+
+async function pickWinners(message, count = 1) {
+  const reaction = message.reactions.cache.get('🎉');
+  if (!reaction) return [];
+
+  const users = await reaction.users.fetch();
+  const entrants = users.filter(u => !u.bot).map(u => u);
+
+  if (entrants.length === 0) return [];
+
+  const shuffled = entrants.sort(() => 0.5 - Math.random());
+  return shuffled.slice(0, Math.min(count, entrants.length));
+}
+
 /* ================= RULES REACTION ================= */
 const pendingVerifications = new Map();
 
@@ -560,26 +628,160 @@ client.on('interactionCreate', async interaction => {
   }
 });
 
-/* ================= GIVEAWAY HELPERS ================= */
-async function getEntrantCount(message) {
-  const reaction = message.reactions.cache.get('🎉');
-  if (!reaction) return 0;
-  const users = await reaction.users.fetch();
-  return users.filter(u => !u.bot).size;
-}
+/* ================= START ================= */
+client.login(process.env.DISCORD_TOKEN).catch(err => console.error('Login failed:', err));
 
-async function pickWinners(message, count = 1) {
-  const reaction = message.reactions.cache.get('🎉');
-  if (!reaction) return [];
+const PORT = process.env.PORT || 3000;
+app.listen(PORT, '0.0.0.0', () => {
+  console.log(`Server running on port ${PORT}`);
+});
 
-  const users = await reaction.users.fetch();
-  const entrants = users.filter(u => !u.bot).map(u => u);
+/* ================= DISCORD OAUTH ROUTES ================= */
+app.get('/auth/discord', (req, res) => {
+  if (!process.env.CLIENT_ID_AUTH || !process.env.CLIENT_SECRET_AUTH) {
+    console.error('Missing CLIENT_ID_AUTH or CLIENT_SECRET_AUTH');
+    return res.status(500).send('Missing Discord OAuth credentials.');
+  }
 
-  if (entrants.length === 0) return [];
+  const url = `https://discord.com/oauth2/authorize?client_id=${process.env.CLIENT_ID_AUTH}&redirect_uri=${encodeURIComponent(process.env.REDIRECT_URI)}&response_type=code&scope=identify`;
+  res.redirect(url);
+});
 
-  const shuffled = entrants.sort(() => 0.5 - Math.random());
-  return shuffled.slice(0, Math.min(count, entrants.length));
-}
+app.get('/auth/callback', async (req, res) => {
+  try {
+    if (!req.query.code) return res.status(400).send('No code received.');
+
+    const tokenRes = await fetch('https://discord.com/api/oauth2/token', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: new URLSearchParams({
+        client_id: process.env.CLIENT_ID_AUTH,
+        client_secret: process.env.CLIENT_SECRET_AUTH,
+        grant_type: 'authorization_code',
+        code: req.query.code,
+        redirect_uri: process.env.REDIRECT_URI
+      })
+    });
+
+    if (!tokenRes.ok) {
+      const errorText = await tokenRes.text();
+      console.error('Token fetch failed:', tokenRes.status, errorText);
+      throw new Error('Token fetch failed');
+    }
+
+    const tokenData = await tokenRes.json();
+
+    const userRes = await fetch('https://discord.com/api/users/@me', {
+      headers: { Authorization: `Bearer ${tokenData.access_token}` }
+    });
+
+    if (!userRes.ok) throw new Error('User fetch failed');
+
+    const user = await userRes.json();
+    sessions.set(user.id, user);
+    res.cookie('auth_uid', user.id, { httpOnly: true, secure: true, sameSite: 'strict', maxAge: 86400000 });
+
+    res.redirect(`/?uid=${user.id}`);
+  } catch (err) {
+    console.error('OAuth error:', err);
+    res.status(500).send('Login error. Check server logs.');
+  }
+});
+
+const sessions = new Map();
+
+app.post('/apply', async (req, res) => {
+  try {
+    const { 
+      app_type = 'discord',
+      email,
+      age,
+      timezone,
+      tiktok_username,
+      tiktok_url,
+      experience,
+      reason,
+      uid 
+    } = req.body;
+
+    let username = 'Anonymous';
+    let userId = null;
+
+    if (uid) {
+      const user = sessions.get(uid);
+      if (user) {
+        username = user.username;
+        userId = user.id;
+      }
+    }
+
+    const queryParams = [
+      username,
+      userId,
+      app_type,
+      email,
+      age,
+      timezone,
+      tiktok_username || null,
+      tiktok_url || null,
+      experience,
+      reason
+    ];
+
+    const r = await pool.query(
+      `INSERT INTO mod_apps (
+        username, user_id, app_type, email, age, timezone, tiktok_username, tiktok_url, experience, reason
+      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10) RETURNING id`,
+      queryParams
+    );
+
+    const embed = new EmbedBuilder()
+      .setTitle('📋 Staff Application')
+      .setColor(0x5865F2)
+      .addFields(
+        { name: 'User', value: userId ? `${username} (${userId})` : 'Anonymous (TikTok Mod)', inline: false },
+        { name: 'Type', value: app_type === 'discord' ? 'Discord Moderator' : 'TikTok Moderator', inline: true },
+        { name: 'Email', value: email || '—', inline: true },
+        { name: 'Age', value: age || '—', inline: true },
+        { name: 'Timezone', value: timezone || '—', inline: true }
+      );
+
+    if (app_type === 'tiktok') {
+      embed.addFields(
+        { name: 'TikTok Username', value: tiktok_username || '—', inline: true },
+        { name: 'TikTok URL', value: tiktok_url || '—', inline: true }
+      );
+    }
+
+    embed.addFields(
+      { name: 'Experience', value: experience || 'None', inline: false },
+      { name: 'Reason', value: reason || 'No reason provided', inline: false },
+      { name: 'Status', value: '⏳ Pending' }
+    );
+
+    const row = new ActionRowBuilder().addComponents(
+      new ButtonBuilder().setCustomId(`approve_${r.rows[0].id}`).setLabel('Approve').setStyle(ButtonStyle.Success),
+      new ButtonBuilder().setCustomId(`deny_${r.rows[0].id}`).setLabel('Deny').setStyle(ButtonStyle.Danger)
+    );
+
+    const channel = await client.channels.fetch(process.env.STAFF_APPS_CHANNEL_ID).catch(err => {
+      console.error('Failed to fetch staff channel:', err);
+      return null;
+    });
+
+    if (channel) {
+      await channel.send({ embeds: [embed], components: [row] });
+      console.log('Application posted to channel');
+    } else {
+      console.warn('Staff channel not found');
+    }
+
+    res.sendStatus(200);
+  } catch (err) {
+    console.error('Apply error:', err);
+    res.status(500).send('Server error during submission.');
+  }
+});
 
 /* ================= START ================= */
 client.login(process.env.DISCORD_TOKEN).catch(err => console.error('Login failed:', err));
