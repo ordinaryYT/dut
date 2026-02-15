@@ -28,6 +28,9 @@ const recentMessages = new Map(); // userId → [{content, timestamp}]
 const MAX_HISTORY = 12;
 const TIME_WINDOW_MS = 20000; // 20 seconds
 
+// Sessions for Discord OAuth
+const sessions = new Map();
+
 /* ================= DATABASE ================= */
 const pool = new Pool({
   connectionString: process.env.DATABASE_URL,
@@ -628,18 +631,10 @@ client.on('interactionCreate', async interaction => {
   }
 });
 
-/* ================= START ================= */
-client.login(process.env.DISCORD_TOKEN).catch(err => console.error('Login failed:', err));
-
-const PORT = process.env.PORT || 3000;
-app.listen(PORT, '0.0.0.0', () => {
-  console.log(`Server running on port ${PORT}`);
-});
-
 /* ================= DISCORD OAUTH ROUTES ================= */
 app.get('/auth/discord', (req, res) => {
   if (!process.env.CLIENT_ID_AUTH || !process.env.CLIENT_SECRET_AUTH) {
-    console.error('Missing CLIENT_ID_AUTH or CLIENT_SECRET_AUTH');
+    console.error('Missing CLIENT_ID_AUTH or CLIENT_SECRET_AUTH env vars');
     return res.status(500).send('Missing Discord OAuth credentials.');
   }
 
@@ -688,8 +683,7 @@ app.get('/auth/callback', async (req, res) => {
   }
 });
 
-const sessions = new Map();
-
+/* ================= APPLY ROUTE ================= */
 app.post('/apply', async (req, res) => {
   try {
     const { 
