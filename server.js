@@ -23,11 +23,6 @@ app.use(express.json());
 app.use(cookieParser('hardcoded-secret-change-this-to-something-secure-69420abcxyz'));
 app.use(express.static(__dirname));
 
-// In-memory recent messages for burst swearing detection
-const recentMessages = new Map(); // userId → [{content, timestamp}]
-const MAX_HISTORY = 12;
-const TIME_WINDOW_MS = 20000; // 20 seconds
-
 /* ================= DATABASE ================= */
 const pool = new Pool({
   connectionString: process.env.DATABASE_URL,
@@ -231,6 +226,74 @@ No other text.
     }
   }
 });
+
+/* ================= GIVEAWAY AUTO-END ON MIN JOIN ================= */
+client.on('messageReactionAdd', async (reaction, user) => {
+  if (user.bot) return;
+  if (reaction.emoji.name !== '🎉') return;
+
+  const message = reaction.message;
+  if (!message.guild) return;
+
+  const { rows } = await pool.query(`SELECT * FROM giveaways WHERE message_id = $1`, [message.id]);
+  if (!rows.length) return;
+
+  const gw = rows[0];
+  if (gw.min_join <= 0) return; // timed giveaways handled separately
+
+  // Get current entrants (non-bot users who reacted)
+  const reactionUsers = await reaction.users.fetch();
+  const entrants = reactionUsers.filter(u => !u.bot).size;
+
+  if (entrants >= gw.min_join) {
+    try {
+      // Pick winners
+      const winnersList = await pickWinners(message, gw.winners);
+      const winnerText = winnersList.length ? winnersList.map(u => u.toString()).join(', ') : 'No one entered 😢';
+
+      // Update embed
+      const endEmbed = EmbedBuilder.from(message.embeds[0])
+        .setTitle('🎉 GIVEAWAY ENDED 🎉 — Minimum reached!')
+        .setDescription(`**Prize:** ${gw.prize}\n**Winners:** ${winnerText}\n**Entrants:** ${entrants}`)
+        .setColor(0xff5555);
+
+      await message.edit({ embeds: [endEmbed] });
+
+      // Announce winners
+      if (winnersList.length) {
+        await message.channel.send(`Congratulations ${winnerText}! You won **${gw.prize}**!`);
+      } else {
+        await message.channel.send('Giveaway ended — no entrants.');
+      }
+
+      // Clean up DB
+      await pool.query(`DELETE FROM giveaways WHERE message_id = $1`, [message.id]);
+    } catch (err) {
+      console.error('Giveaway auto-end failed:', err);
+    }
+  }
+});
+
+/* ================= GIVEAWAY HELPERS ================= */
+async function getEntrantCount(message) {
+  const reaction = message.reactions.cache.get('🎉');
+  if (!reaction) return 0;
+  const users = await reaction.users.fetch();
+  return users.filter(u => !u.bot).size;
+}
+
+async function pickWinners(message, count = 1) {
+  const reaction = message.reactions.cache.get('🎉');
+  if (!reaction) return [];
+
+  const users = await reaction.users.fetch();
+  const entrants = users.filter(u => !u.bot).map(u => u);
+
+  if (entrants.length === 0) return [];
+
+  const shuffled = entrants.sort(() => 0.5 - Math.random());
+  return shuffled.slice(0, Math.min(count, entrants.length));
+}
 
 /* ================= RULES REACTION ================= */
 const pendingVerifications = new Map();
@@ -565,7 +628,7 @@ async function getEntrantCount(message) {
   const reaction = message.reactions.cache.get('🎉');
   if (!reaction) return 0;
   const users = await reaction.users.fetch();
-  return users.filter(u => !u.bot && !u.system).size;
+  return users.filter(u => !u.bot).size;
 }
 
 async function pickWinners(message, count = 1) {
@@ -573,7 +636,7 @@ async function pickWinners(message, count = 1) {
   if (!reaction) return [];
 
   const users = await reaction.users.fetch();
-  const entrants = users.filter(u => !u.bot && !u.system).map(u => u);
+  const entrants = users.filter(u => !u.bot).map(u => u);
 
   if (entrants.length === 0) return [];
 
