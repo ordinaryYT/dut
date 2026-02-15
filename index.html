@@ -18,6 +18,7 @@
       <button onclick="show('clips')">Clips</button>
       <button onclick="show('gifters')">Gifters</button>
       <button onclick="show('staff')">Staff</button>
+      <button onclick="show('donate')">Donate</button>
     </div>
   </div>
 </nav>
@@ -43,7 +44,6 @@
         <a target="_blank" title="♬ original sound - TheBigDutz" href="https://www.tiktok.com/music/original-sound-TheBigDutz-7599742121465514774?refer=embed">♬ original sound - TheBigDutz</a>
       </section>
     </blockquote>
-    <!-- Add more clip embeds here if needed -->
   </div>
 </section>
 
@@ -57,12 +57,11 @@
         <a target="_blank" title="♬ original sound - TheBigDutz" href="https://www.tiktok.com/music/original-sound-TheBigDutz-7599770487438215958?refer=embed">♬ original sound - TheBigDutz</a>
       </section>
     </blockquote>
-    <!-- Add more gifter embeds here if needed -->
   </div>
 </section>
 
-<section id="staff" class="section hidden px-6 py-20 max-w-4xl mx-auto">
-  <h2 class="text-4xl font-bold mb-8 text-center">Staff Applications & Donate</h2>
+<section id="staff" class="section hidden px-6 py-20 max-w-3xl mx-auto">
+  <h2 class="text-4xl font-bold mb-8 text-center">Staff Applications</h2>
 
   <div id="appTypeSelect" class="text-center space-y-6 mb-10">
     <div class="flex flex-col sm:flex-row justify-center gap-6">
@@ -75,7 +74,6 @@
     </div>
   </div>
 
-  <!-- Discord Mod Form -->
   <div id="discordForm" class="hidden">
     <h3 class="text-2xl font-bold mb-6 text-center">Discord Moderator Application</h3>
     <div id="loginBoxDiscord" class="text-center mb-8">
@@ -97,7 +95,6 @@
     </form>
   </div>
 
-  <!-- TikTok Mod Form -->
   <div id="tiktokForm" class="hidden">
     <h3 class="text-2xl font-bold mb-6 text-center">TikTok Moderator Application</h3>
     <form id="tiktokAppForm" class="space-y-5">
@@ -115,63 +112,61 @@
     </form>
   </div>
 
-  <!-- Success message -->
   <div id="done" class="hidden text-green-400 font-bold text-center mt-8 text-xl">
     ✅ Application submitted successfully! We'll review it soon.
   </div>
+</section>
 
-  <!-- Donate Section -->
-  <div class="mt-16">
-    <h3 class="text-3xl font-bold text-center mb-8 text-green-400">Support TheBigDutz</h3>
-    <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-8">
-      <!-- £1 -->
-      <div class="bg-zinc-900 p-6 rounded-xl border border-green-600/30 text-center">
-        <h4 class="text-2xl font-bold mb-4">£1 Donation</h4>
-        <div data-upgrade-chat-embed="a32cc51c-26aa-4e46-abdd-7c0f4acf3755" data-upgrade-chat-products="ce34153b-fe16-45e8-8553-3f68fcfecb01" data-upgrade-chat-baseurl="https://upgrade.chat"></div>
-        <script src="https://upgrade.chat/embed/embed.js"></script>
-      </div>
+<section id="donate" class="section hidden px-6 py-20 max-w-4xl mx-auto">
+  <h2 class="text-4xl font-bold mb-8 text-center">Support TheBigDutz</h2>
+  <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-8">
+    <!-- £1 -->
+    <div class="bg-zinc-900 p-6 rounded-xl border border-green-600/30 text-center">
+      <h4 class="text-2xl font-bold mb-4">£1 Donation</h4>
+      <div data-upgrade-chat-embed="a32cc51c-26aa-4e46-abdd-7c0f4acf3755" data-upgrade-chat-products="ce34153b-fe16-45e8-8553-3f68fcfecb01" data-upgrade-chat-baseurl="https://upgrade.chat"></div>
+      <script src="https://upgrade.chat/embed/embed.js"></script>
+    </div>
 
-      <!-- £5 -->
-      <div class="bg-zinc-900 p-6 rounded-xl border border-green-600/30 text-center">
-        <h4 class="text-2xl font-bold mb-4">£5 Donation</h4>
-        <div data-upgrade-chat-embed="a32cc51c-26aa-4e46-abdd-7c0f4acf3755" data-upgrade-chat-products="4a6ca5b9-ccac-4680-af7b-294c817469ee" data-upgrade-chat-baseurl="https://upgrade.chat"></div>
-        <script src="https://upgrade.chat/embed/embed.js"></script>
-      </div>
+    <!-- £5 -->
+    <div class="bg-zinc-900 p-6 rounded-xl border border-green-600/30 text-center">
+      <h4 class="text-2xl font-bold mb-4">£5 Donation</h4>
+      <div data-upgrade-chat-embed="a32cc51c-26aa-4e46-abdd-7c0f4acf3755" data-upgrade-chat-products="4a6ca5b9-ccac-4680-af7b-294c817469ee" data-upgrade-chat-baseurl="https://upgrade.chat"></div>
+      <script src="https://upgrade.chat/embed/embed.js"></script>
+    </div>
 
-      <!-- £10 -->
-      <div class="bg-zinc-900 p-6 rounded-xl border border-green-600/30 text-center">
-        <h4 class="text-2xl font-bold mb-4">£10 Donation</h4>
-        <div data-upgrade-chat-embed="a32cc51c-26aa-4e46-abdd-7c0f4acf3755" data-upgrade-chat-products="ecfbc908-aef4-4774-86cb-fb7a905a0123" data-upgrade-chat-baseurl="https://upgrade.chat"></div>
-        <script src="https://upgrade.chat/embed/embed.js"></script>
-      </div>
+    <!-- £10 -->
+    <div class="bg-zinc-900 p-6 rounded-xl border border-green-600/30 text-center">
+      <h4 class="text-2xl font-bold mb-4">£10 Donation</h4>
+      <div data-upgrade-chat-embed="a32cc51c-26aa-4e46-abdd-7c0f4acf3755" data-upgrade-chat-products="ecfbc908-aef4-4774-86cb-fb7a905a0123" data-upgrade-chat-baseurl="https://upgrade.chat"></div>
+      <script src="https://upgrade.chat/embed/embed.js"></script>
+    </div>
 
-      <!-- £20 -->
-      <div class="bg-zinc-900 p-6 rounded-xl border border-green-600/30 text-center">
-        <h4 class="text-2xl font-bold mb-4">£20 Donation</h4>
-        <div data-upgrade-chat-embed="a32cc51c-26aa-4e46-abdd-7c0f4acf3755" data-upgrade-chat-products="3e999e8e-83e5-4fcd-85da-effa5a3e0e11" data-upgrade-chat-baseurl="https://upgrade.chat"></div>
-        <script src="https://upgrade.chat/embed/embed.js"></script>
-      </div>
+    <!-- £20 -->
+    <div class="bg-zinc-900 p-6 rounded-xl border border-green-600/30 text-center">
+      <h4 class="text-2xl font-bold mb-4">£20 Donation</h4>
+      <div data-upgrade-chat-embed="a32cc51c-26aa-4e46-abdd-7c0f4acf3755" data-upgrade-chat-products="3e999e8e-83e5-4fcd-85da-effa5a3e0e11" data-upgrade-chat-baseurl="https://upgrade.chat"></div>
+      <script src="https://upgrade.chat/embed/embed.js"></script>
+    </div>
 
-      <!-- £40 -->
-      <div class="bg-zinc-900 p-6 rounded-xl border border-green-600/30 text-center">
-        <h4 class="text-2xl font-bold mb-4">£40 Donation</h4>
-        <div data-upgrade-chat-embed="a32cc51c-26aa-4e46-abdd-7c0f4acf3755" data-upgrade-chat-products="3d55a507-6d35-4ca9-be4b-3de7776e19ce" data-upgrade-chat-baseurl="https://upgrade.chat"></div>
-        <script src="https://upgrade.chat/embed/embed.js"></script>
-      </div>
+    <!-- £40 -->
+    <div class="bg-zinc-900 p-6 rounded-xl border border-green-600/30 text-center">
+      <h4 class="text-2xl font-bold mb-4">£40 Donation</h4>
+      <div data-upgrade-chat-embed="a32cc51c-26aa-4e46-abdd-7c0f4acf3755" data-upgrade-chat-products="3d55a507-6d35-4ca9-be4b-3de7776e19ce" data-upgrade-chat-baseurl="https://upgrade.chat"></div>
+      <script src="https://upgrade.chat/embed/embed.js"></script>
+    </div>
 
-      <!-- £80 -->
-      <div class="bg-zinc-900 p-6 rounded-xl border border-green-600/30 text-center">
-        <h4 class="text-2xl font-bold mb-4">£80 Donation</h4>
-        <div data-upgrade-chat-embed="a32cc51c-26aa-4e46-abdd-7c0f4acf3755" data-upgrade-chat-products="737fe543-c48e-48dc-9860-2699ac7d9a19" data-upgrade-chat-baseurl="https://upgrade.chat"></div>
-        <script src="https://upgrade.chat/embed/embed.js"></script>
-      </div>
+    <!-- £80 -->
+    <div class="bg-zinc-900 p-6 rounded-xl border border-green-600/30 text-center">
+      <h4 class="text-2xl font-bold mb-4">£80 Donation</h4>
+      <div data-upgrade-chat-embed="a32cc51c-26aa-4e46-abdd-7c0f4acf3755" data-upgrade-chat-products="737fe543-c48e-48dc-9860-2699ac7d9a19" data-upgrade-chat-baseurl="https://upgrade.chat"></div>
+      <script src="https://upgrade.chat/embed/embed.js"></script>
+    </div>
 
-      <!-- £100 -->
-      <div class="bg-zinc-900 p-6 rounded-xl border border-green-600/30 text-center">
-        <h4 class="text-2xl font-bold mb-4">£100 Donation</h4>
-        <div data-upgrade-chat-embed="a32cc51c-26aa-4e46-abdd-7c0f4acf3755" data-upgrade-chat-products="7f6e279f-8d9c-402c-a75f-939c25bec2f1" data-upgrade-chat-baseurl="https://upgrade.chat"></div>
-        <script src="https://upgrade.chat/embed/embed.js"></script>
-      </div>
+    <!-- £100 -->
+    <div class="bg-zinc-900 p-6 rounded-xl border border-green-600/30 text-center">
+      <h4 class="text-2xl font-bold mb-4">£100 Donation</h4>
+      <div data-upgrade-chat-embed="a32cc51c-26aa-4e46-abdd-7c0f4acf3755" data-upgrade-chat-products="7f6e279f-8d9c-402c-a75f-939c25bec2f1" data-upgrade-chat-baseurl="https://upgrade.chat"></div>
+      <script src="https://upgrade.chat/embed/embed.js"></script>
     </div>
   </div>
 </section>
