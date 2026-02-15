@@ -28,6 +28,9 @@ const recentMessages = new Map(); // userId → [{content, timestamp}]
 const MAX_HISTORY = 12;
 const TIME_WINDOW_MS = 20000; // 20 seconds
 
+// In-memory timers for timed giveaways (message_id → timeout ID)
+const giveawayTimers = new Map();
+
 // Sessions for Discord OAuth
 const sessions = new Map();
 
@@ -235,7 +238,7 @@ No other text.
   }
 });
 
-/* ================= GIVEAWAY AUTO-END ON MIN JOIN ================= */
+/* ================= GIVEAWAY AUTO-END ON MIN JOIN OR TIMER ================= */
 client.on('messageReactionAdd', async (reaction, user) => {
   if (user.bot) return;
   if (reaction.emoji.name !== '🎉') return;
@@ -247,40 +250,40 @@ client.on('messageReactionAdd', async (reaction, user) => {
   if (!rows.length) return;
 
   const gw = rows[0];
-  if (gw.min_join <= 0) return; // timed giveaways handled separately
 
-  // Get current entrants (non-bot users who reacted)
-  const reactionUsers = await reaction.users.fetch();
-  const entrants = reactionUsers.filter(u => !u.bot).size;
-
-  if (entrants >= gw.min_join) {
-    try {
-      // Pick winners
-      const winnersList = await pickWinners(message, gw.winners);
-      const winnerText = winnersList.length ? winnersList.map(u => u.toString()).join(', ') : 'No one entered 😢';
-
-      // Update embed
-      const endEmbed = EmbedBuilder.from(message.embeds[0])
-        .setTitle('🎉 GIVEAWAY ENDED 🎉 — Minimum reached!')
-        .setDescription(`**Prize:** ${gw.prize}\n**Winners:** ${winnerText}\n**Entrants:** ${entrants}`)
-        .setColor(0xff5555);
-
-      await message.edit({ embeds: [endEmbed] });
-
-      // Announce winners
-      if (winnersList.length) {
-        await message.channel.send(`Congratulations ${winnerText}! You won **${gw.prize}**!`);
-      } else {
-        await message.channel.send('Giveaway ended — no entrants.');
-      }
-
-      // Clean up DB
-      await pool.query(`DELETE FROM giveaways WHERE message_id = $1`, [message.id]);
-    } catch (err) {
-      console.error('Giveaway auto-end failed:', err);
+  // Min-join check (already in previous version)
+  if (gw.min_join > 0) {
+    const entrants = await getEntrantCount(message);
+    if (entrants >= gw.min_join) {
+      await endGiveaway(message, gw);
     }
   }
 });
+
+// Helper to end any giveaway (used by timer and min_join)
+async function endGiveaway(message, gw) {
+  try {
+    const winnersList = await pickWinners(message, gw.winners);
+    const winnerText = winnersList.length ? winnersList.map(u => u.toString()).join(', ') : 'No one entered 😢';
+
+    const endEmbed = EmbedBuilder.from(message.embeds[0])
+      .setTitle('🎉 GIVEAWAY ENDED 🎉')
+      .setDescription(`**Prize:** ${gw.prize}\n**Winners:** ${winnerText}\n**Entrants:** ${await getEntrantCount(message)}`)
+      .setColor(0xff5555);
+
+    await message.edit({ embeds: [endEmbed] });
+
+    if (winnersList.length) {
+      await message.channel.send(`Congratulations ${winnerText}! You won **${gw.prize}**!`);
+    } else {
+      await message.channel.send('Giveaway ended — no entrants.');
+    }
+
+    await pool.query(`DELETE FROM giveaways WHERE message_id = $1`, [message.id]);
+  } catch (err) {
+    console.error('Giveaway end failed:', err);
+  }
+}
 
 /* ================= GIVEAWAY HELPERS ================= */
 async function getEntrantCount(message) {
@@ -585,6 +588,27 @@ client.on('interactionCreate', async interaction => {
             [msg.id, interaction.channel.id, endTime, prize, winners, minJoin]
           );
 
+          // Auto-end timer for timed giveaways
+          if (endTime) {
+            const timeLeft = endTime - Date.now();
+            if (timeLeft > 0) {
+              const timeout = setTimeout(async () => {
+                try {
+                  const freshMsg = await interaction.channel.messages.fetch(msg.id).catch(() => null);
+                  if (freshMsg) {
+                    await endGiveaway(freshMsg, { ...gw, end_time: endTime, prize, winners });
+                  }
+                } catch (err) {
+                  console.error('Timed giveaway end failed:', err);
+                } finally {
+                  giveawayTimers.delete(msg.id);
+                }
+              }, timeLeft);
+
+              giveawayTimers.set(msg.id, timeout);
+            }
+          }
+
           await interaction.editReply({ content: `Giveaway started → ${msg.url}` });
         }
 
@@ -601,25 +625,15 @@ client.on('interactionCreate', async interaction => {
           const msg = await ch.messages.fetch(msgId).catch(() => null);
           if (!msg) return interaction.editReply({ content: 'Giveaway message not found.' });
 
-          const entrants = await getEntrantCount(msg);
-          const winnersList = await pickWinners(msg, gw.winners);
-          const winnerText = winnersList.length ? winnersList.map(u => u.toString()).join(', ') : 'No one entered 😢';
+          await endGiveaway(msg, gw);
 
-          const endEmbed = EmbedBuilder.from(msg.embeds[0])
-            .setTitle('🎉 GIVEAWAY FORCE ENDED 🎉')
-            .setDescription(`**Prize:** ${gw.prize}\n**Winners:** ${winnerText}\n**Entrants:** ${entrants}`)
-            .setColor(0xff5555);
-
-          await msg.edit({ embeds: [endEmbed] });
-
-          if (winnersList.length) {
-            await ch.send(`Congratulations ${winnerText}! You won **${gw.prize}** (force ended)!`);
-          } else {
-            await ch.send(`Giveaway force ended — no winners.`);
+          // Clear timer if it exists
+          if (giveawayTimers.has(msgId)) {
+            clearTimeout(giveawayTimers.get(msgId));
+            giveawayTimers.delete(msgId);
           }
 
-          await pool.query(`DELETE FROM giveaways WHERE message_id = $1`, [msgId]);
-          await interaction.editReply({ content: 'Giveaway ended early.' });
+          await interaction.editReply({ content: 'Giveaway force ended.' });
         }
       }
     }
